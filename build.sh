@@ -1,1 +1,2 @@
-npm run build:roam
+npm install
+npm run build
