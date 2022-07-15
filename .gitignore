@@ -8,4 +8,6 @@ node_modules
   extension.js.LICENSE.txt
   report.html
   stats.json
-  
+
+.DS_Store
+archive
