@@ -8,13 +8,13 @@ const panelConfig = {
   settings: [
       {id:     "tweet-template",
        name:   "Tweet Template",
-       description: "variables available are {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_URL}, {DATE} as well as all Roam syntax",
+       description: "variables available are {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_URL}, {DATE}, {NEWLINE} as well as all Roam syntax",
        action: {type:        "input",
-                placeholder: "[[>]] {TWEET} \n [🐦]({URL}) by {AUTHOR_NAME} on {DATE}",
+                placeholder: "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on {DATE}",
                 onChange:    (evt) => { console.log("Input Changed!", evt); }}}
   ]
 };
-// [🐦]({URL}) by [{AUTHOR_NAME}]({AUTHOR_URL}) on {DATE}: \n {TWEET}
+// [🐦]({URL}) by [{AUTHOR_NAME}]({AUTHOR_URL}) on {DATE}: {NEWLINE} {TWEET}
 function getInfofromTweet(htmlString){
   let htmlObject = document.createElement('div');
   htmlObject.innerHTML = htmlString;
@@ -46,7 +46,7 @@ async function extractTweet(uid, tweet, template){
   // have to load in the default template manually then. This may bite me later on...
   // also dealing with if people completely delete the template by accident
   if(template==null || template==''){
-    template = "[[>]] {TWEET} \n [🐦]({URL}) by {AUTHOR_NAME} on {DATE}";
+    template = "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on {DATE}";
   }
   const regex =/(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/;
   var urlRegex = new RegExp(regex, 'ig');
@@ -79,11 +79,12 @@ async function extractTweet(uid, tweet, template){
       roamDate = window.roamAlphaAPI.util.dateToPageTitle(roamDate)
       var parsedTweet = template.replaceAll('{TWEET}',tweetText);
 
-      // {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_URL}, {DATE}
+      // {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_URL}, {DATE}, {NEWLINE}
       parsedTweet = parsedTweet.replaceAll('{URL}',tweetURL);
       parsedTweet = parsedTweet.replaceAll('{AUTHOR_NAME}',json.author_name);
       parsedTweet = parsedTweet.replaceAll('{AUTHOR_URL}',json.author_url);
       parsedTweet = parsedTweet.replaceAll('{DATE}',roamDate);
+      parsedTweet = parsedTweet.replaceAll('{NEWLINE}', "\n" );
 
       window.roamAlphaAPI.updateBlock({"block": 
                   {"uid": uid,
