@@ -3,6 +3,8 @@
 
 import fetchJsonp from 'fetch-jsonp';
 
+var template = '[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]'
+
 const panelConfig = {
   tabTitle: "Tweet Extractor",
   settings: [
@@ -10,18 +12,25 @@ const panelConfig = {
        name:   "Tweet Template",
        description: "variables available are {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_URL}, {DATE}, {NEWLINE} as well as all Roam syntax",
        action: {type:        "input",
-                placeholder: "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on {DATE}",
-                onChange:    (evt) => { console.log("Input Changed!", evt); }}}
+                placeholder: "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]",
+                onChange:    (evt) => { 
+                  // console.log("Tweet Extractor Template Changed!", evt.target.value); 
+                  template = evt.target.value;
+                }}}
   ]
 };
-// [🐦]({URL}) by [{AUTHOR_NAME}]({AUTHOR_URL}) on {DATE}: {NEWLINE} {TWEET}
+// alt tempalte [🐦]({URL}) by [{AUTHOR_NAME}]({AUTHOR_URL}) on [[{DATE}]]: {NEWLINE} {TWEET}
 function getInfofromTweet(htmlString){
+  // preserve newlines
+  htmlString = htmlString.replaceAll("<br>", "{NEWLINE}");
+
   let htmlObject = document.createElement('div');
   htmlObject.innerHTML = htmlString;
   
   let paragraph = htmlObject.querySelector("p")
+
   let text = paragraph.innerText || paragraph.textContent;
-  
+
   let links = htmlObject.querySelectorAll("a")
   let lastLink = links[links.length - 1]
   
@@ -62,8 +71,6 @@ async function extractTweet(uid, tweet, template){
     } else { return 0; }
   }
   let tweetURL = getTweetUrl(tweet)
-
-  // let tweetURL = "https://twitter.com/RoamResearch/status/1547823282589642753"
   
   fetchJsonp("https://publish.twitter.com/oembed?omit_script=1&url=" + tweetURL)
     .then(function(response) {
@@ -101,36 +108,44 @@ async function extractTweet(uid, tweet, template){
 // define a handler
 function keydown(e) {
   if ((e = e || event).ctrlKey && e.shiftKey && e.key === 'E') {
-    console.log(e)
     let block = window.roamAlphaAPI.ui.getFocusedBlock()
+    
     if (block != null){
-      extractCurrentBlock(block['block-uid'], extensionAPI.settings.get("tweet-template"))
+      extractCurrentBlock(block['block-uid'], template)
     }
   }
 }
 
-export default {
-  onload: ({extensionAPI}) => {
-    console.log("load tweet extract plugin")
-    
-    
-    extensionAPI.settings.panel.create(panelConfig);
-    
-    // register the handler
-    window.addEventListener("keydown", keydown);
-
-    roamAlphaAPI.ui.blockContextMenu.addCommand({
-      label: "Extract Tweet",
-      callback: (e) => extractTweet(e['block-uid'], e['block-string'], extensionAPI.settings.get("tweet-template"))
-  })
-  },
-  onunload: () => {
-    console.log("unload tweet extract plugin")
-
-    window.removeEventListener("keydown", keydown);
-
-    roamAlphaAPI.ui.blockContextMenu.removeCommand(
-      {label: "Extract Tweet"}
-    )
+// move onload to async function
+async function onload({extensionAPI}) {
+  console.log("load tweet extract plugin")
+  // set default setting
+  if (!extensionAPI.settings.get('tweet-template')) {
+    await extensionAPI.settings.set('tweet-template', template);
   }
+
+  extensionAPI.settings.panel.create(panelConfig);
+  
+  // register the handler
+  window.addEventListener("keydown", keydown, false);
+
+  roamAlphaAPI.ui.blockContextMenu.addCommand({
+    label: "Extract Tweet",
+    callback: (e) => extractTweet(e['block-uid'], e['block-string'], extensionAPI.settings.get("tweet-template"))
+  })
+}
+
+function onunload() {
+  console.log("unload tweet extract plugin")
+
+  window.removeEventListener("keydown", keydown);
+
+  roamAlphaAPI.ui.blockContextMenu.removeCommand(
+    {label: "Extract Tweet"}
+  )
+}
+
+export default {
+  onload,
+  onunload
 };
