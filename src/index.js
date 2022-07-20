@@ -6,7 +6,7 @@ import fetchJsonp from 'fetch-jsonp';
 var template = '[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]'
 
 const panelConfig = {
-  tabTitle: "Tweet Extractor",
+  tabTitle: "Tweet Extract",
   settings: [
       {id:     "tweet-template",
        name:   "Tweet Template",
@@ -14,7 +14,7 @@ const panelConfig = {
        action: {type:        "input",
                 placeholder: "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]",
                 onChange:    (evt) => { 
-                  // console.log("Tweet Extractor Template Changed!", evt.target.value); 
+                  // console.log("Tweet Extract Template Changed!", evt.target.value); 
                   template = evt.target.value;
                 }}}
   ]
