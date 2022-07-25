@@ -1,8 +1,5 @@
 module.exports = {
-    externals: {
-        react: "React",
-        "chrono-node": "ChronoNode"
-    },
+
     externalsType: "window",
     entry: './src/index.js',
     output: {
@@ -15,4 +12,5 @@ module.exports = {
     experiments: {
         outputModule: true,
     },
+    mode:'production',
 };
