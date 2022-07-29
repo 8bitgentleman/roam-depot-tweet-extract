@@ -14,7 +14,6 @@ const panelConfig = {
        action: {type:        "input",
                 placeholder: "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]",
                 onChange:    (evt) => { 
-                  // console.log("Tweet Extract Template Changed!", evt.target.value); 
                   template = evt.target.value;
                 }}}
   ]
@@ -46,7 +45,7 @@ function extractCurrentBlock(uid, template){
                 ]`;
 
   let block_string = window.roamAlphaAPI.q(query,uid);
-  console.log(block_string);
+
   extractTweet(uid, block_string, template);
 }
 
@@ -76,7 +75,7 @@ async function extractTweet(uid, tweet, template){
     .then(function(response) {
       return response.json()
     }).then(function(json) {
-      console.log('parsed json', json)
+
       let tweetData = getInfofromTweet(json.html)
 
       let tweetText = tweetData[0];
