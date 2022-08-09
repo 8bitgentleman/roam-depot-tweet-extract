@@ -12,7 +12,7 @@ const panelConfig = {
        name:   "Tweet Template",
        description: "variables available are {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE} as well as all Roam syntax",
        action: {type:        "input",
-                placeholder: "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]",
+                placeholder: "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_HANDLE} on [[{DATE}]]",
                 onChange:    (evt) => { 
                   template = evt.target.value;
                 }}}
