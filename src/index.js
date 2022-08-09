@@ -10,7 +10,7 @@ const panelConfig = {
   settings: [
       {id:     "tweet-template",
        name:   "Tweet Template",
-       description: "variables available are {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_URL}, {DATE}, {NEWLINE} as well as all Roam syntax",
+       description: "variables available are {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE} as well as all Roam syntax",
        action: {type:        "input",
                 placeholder: "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]",
                 onChange:    (evt) => { 
@@ -85,9 +85,10 @@ async function extractTweet(uid, tweet, template){
       roamDate = window.roamAlphaAPI.util.dateToPageTitle(roamDate)
       var parsedTweet = template.replaceAll('{TWEET}',tweetText);
 
-      // {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_URL}, {DATE}, {NEWLINE}
+      // {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE}
       parsedTweet = parsedTweet.replaceAll('{URL}',tweetURL);
       parsedTweet = parsedTweet.replaceAll('{AUTHOR_NAME}',json.author_name);
+      parsedTweet = parsedTweet.replaceAll('{AUTHOR_HANDLE}',json.author_url.split('/').slice(-1));
       parsedTweet = parsedTweet.replaceAll('{AUTHOR_URL}',json.author_url);
       parsedTweet = parsedTweet.replaceAll('{DATE}',roamDate);
       parsedTweet = parsedTweet.replaceAll('{NEWLINE}', "\n" );
