@@ -3,21 +3,9 @@
 
 import fetchJsonp from 'fetch-jsonp';
 
-var template = '[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]'
+var defaultTemplate = '[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]'
 
-const panelConfig = {
-  tabTitle: "Tweet Extract",
-  settings: [
-      {id:     "tweet-template",
-       name:   "Tweet Template",
-       description: "variables available are {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE} as well as all Roam syntax",
-       action: {type:        "input",
-                placeholder: "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_HANDLE} on [[{DATE}]]",
-                onChange:    (evt) => { 
-                  template = evt.target.value;
-                }}}
-  ]
-};
+
 // alt tempalte [🐦]({URL}) by [{AUTHOR_NAME}]({AUTHOR_URL}) on [[{DATE}]]: {NEWLINE} {TWEET}
 function getInfofromTweet(htmlString){
   // preserve newlines
@@ -53,8 +41,10 @@ async function extractTweet(uid, tweet, template){
   // for some reason settings placeholders are coming in as null on first load.
   // have to load in the default template manually then. This may bite me later on...
   // also dealing with if people completely delete the template by accident
+
   if(template==null || template==''){
-    template = "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on {DATE}";
+    // template = "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on {DATE}";
+    alert("Tweet Extract template not set")
   }
   const regex =/(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/;
   var urlRegex = new RegExp(regex, 'ig');
@@ -106,28 +96,45 @@ async function extractTweet(uid, tweet, template){
 }
 
 // define a handler
-function keydown(e) {
-  if ((e = e || event).ctrlKey && e.shiftKey && e.key === 'E') {
-    let block = window.roamAlphaAPI.ui.getFocusedBlock()
-    
-    if (block != null){
-      extractCurrentBlock(block['block-uid'], template)
-    }
-  }
-}
+let myEventHandler = undefined;
 
 // move onload to async function
 async function onload({extensionAPI}) {
   console.log("load tweet extract plugin")
   // set default setting
   if (!extensionAPI.settings.get('tweet-template')) {
-    await extensionAPI.settings.set('tweet-template', template);
+    await extensionAPI.settings.set('tweet-template', defaultTemplate);
   }
+  // define inside onload so it can use the extensionAPI
+  const panelConfig = {
+    tabTitle: "Tweet Extract",
+    settings: [
+        {id:     "tweet-template",
+         name:   "Tweet Template",
+         description: "variables available are {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE} as well as all Roam syntax",
+         action: {type:        "input",
+                  // placeholder: "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_HANDLE} on [[{DATE}]]",
+                  onChange:    async (evt) => { 
+                    defaultTemplate = evt.target.value;
+                    await extensionAPI.settings.set('tweet-template', evt.target.value);
+                  }}}
+    ]
+  };
 
   extensionAPI.settings.panel.create(panelConfig);
-  
+
+  // define inside onload so it can use the extensionAPI
+  myEventHandler = function(e){
+    if ((e = e || event).ctrlKey && e.shiftKey && e.key === 'E') {
+      let block = window.roamAlphaAPI.ui.getFocusedBlock()
+      
+      if (block != null){
+        extractCurrentBlock(block['block-uid'], extensionAPI.settings.get('tweet-template'))
+      }
+    }
+ }
   // register the handler
-  window.addEventListener("keydown", keydown, false);
+  window.addEventListener("keydown", myEventHandler, false);
 
   roamAlphaAPI.ui.blockContextMenu.addCommand({
     label: "Extract Tweet",
@@ -136,13 +143,13 @@ async function onload({extensionAPI}) {
 }
 
 function onunload() {
-  console.log("unload tweet extract plugin")
-
-  window.removeEventListener("keydown", keydown);
+  window.removeEventListener("keydown", myEventHandler, false);
 
   roamAlphaAPI.ui.blockContextMenu.removeCommand(
     {label: "Extract Tweet"}
   )
+
+  console.log("unload tweet extract plugin")
 }
 
 export default {
