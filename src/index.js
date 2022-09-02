@@ -38,12 +38,8 @@ function extractCurrentBlock(uid, template){
 }
 
 async function extractTweet(uid, tweet, template){
-  // for some reason settings placeholders are coming in as null on first load.
-  // have to load in the default template manually then. This may bite me later on...
-  // also dealing with if people completely delete the template by accident
 
   if(template==null || template==''){
-    // template = "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on {DATE}";
     alert("Tweet Extract template not set")
   }
   const regex =/(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/;
