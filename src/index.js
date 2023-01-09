@@ -1,8 +1,6 @@
 /* Original code by matt vogel */
   /* v1  */
 
-import fetchJsonp from 'fetch-jsonp';
-
 var template = '[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]'
 
 const panelConfig = {
@@ -10,12 +8,18 @@ const panelConfig = {
   settings: [
       {id:     "tweet-template",
        name:   "Tweet Template",
-       description: "variables available are {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE} as well as all Roam syntax",
+       description: "variables available are {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE}, {IMAGES} as well as all Roam syntax",
        action: {type:        "input",
                 placeholder: "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_HANDLE} on [[{DATE}]]",
                 onChange:    (evt) => { 
                   template = evt.target.value;
-                }}}
+                }}},
+      {id:     "image-location",
+      name:   "Select test",
+      description: "If there are images attached to a tweet where should they be added",
+      action: {type:     "select",
+                items:    ["child block", "inline"],
+                }},
   ]
 };
 
@@ -50,7 +54,7 @@ function extractCurrentBlock(uid, template){
   extractTweet(uid, block_string, template);
 }
 
-async function extractTweet(uid, tweet, template){
+async function extractTweet(uid, tweet, template, imageLocation){
   // for some reason settings placeholders are coming in as null on first load.
   // have to load in the default template manually then. This may bite me later on...
   // also dealing with if people completely delete the template by accident
@@ -106,6 +110,7 @@ async function extractTweet(uid, tweet, template){
 
   async function getTweetData(tweetURL) {
     const TWEET_ID = tweetURL.split("/")[5]
+    // I now use a CORS proxy to get embeded tweet images. Because of this sometimes a tweet needs to be extracted multiple times
     // replace this with settings panel value
     const CORS_PROXY_URL = "https://citrine-scratched-digit.glitch.me/"
     const BASE_URL = `${CORS_PROXY_URL}https://tweetpik.com/api/tweets`
@@ -125,7 +130,7 @@ async function extractTweet(uid, tweet, template){
 
   let tweetURL = getTweetUrl(tweet)
   const tweetData = await getTweetData(tweetURL);
-  
+  // console.log(tweetData)
   // extract tweet info
   let tweetText = tweetData.text;
   let tweetDate = tweetData.created_at;
@@ -137,7 +142,7 @@ async function extractTweet(uid, tweet, template){
   // parse tweet with template
   var parsedTweet = template.replaceAll('{TWEET}',tweetText);
   
-  // {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE}
+  // {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE}, {IMAGES}
   parsedTweet = parsedTweet.replaceAll('{URL}',tweetURL);
   parsedTweet = parsedTweet.replaceAll('{AUTHOR_NAME}',tweetData.name);
   parsedTweet = parsedTweet.replaceAll('{AUTHOR_HANDLE}',tweetData.username);
@@ -145,28 +150,47 @@ async function extractTweet(uid, tweet, template){
   parsedTweet = parsedTweet.replaceAll('{DATE}',roamDate);
   parsedTweet = parsedTweet.replaceAll('{NEWLINE}', "\n" );
 
+  // insert images
+  
+  if (tweetData.media) {
+    if (imageLocation=='inline') {
+      let parsedImages = "";
+      for (const key in tweetData.media) { 
+        let type = tweetData.media[key].type
+        let url = tweetData.media[key].url
+        // console.log(type,url);
+        if (type=='photo') {
+          const cleanedAttachment = await uploadFile(url);
+          parsedImages = parsedImages.concat(" ", cleanedAttachment);
+        }
+      }
+      // get all of the images and place them inline 
+      parsedTweet = parsedTweet.replaceAll('{IMAGES}',parsedImages);
+    } else {
+      // if inserting images as children removed unneeded template item
+      parsedTweet = parsedTweet.replaceAll('{IMAGES}',"");
+      // insert as children blocks
+      for (const key in tweetData.media) { 
+        let type = tweetData.media[key].type
+        let url = tweetData.media[key].url
+        // console.log(type,url);
+        if (type=='photo') {
+          const cleanedAttachment = await uploadFile(url);
+    
+            window.roamAlphaAPI.createBlock(
+          {"location": 
+            {"parent-uid": uid, 
+            "order": 'last'}, 
+          "block": 
+            {"string": cleanedAttachment}})
+        }
+      }
+    }
+    
+  }
   window.roamAlphaAPI.updateBlock({"block": 
                   {"uid": uid,
                     "string": parsedTweet}})
-
-  // insert images as children for now
-  if (tweetData.media) {
-    for (const key in tweetData.media) { 
-      let type = tweetData.media[key].type
-      let url = tweetData.media[key].url
-      console.log(type,url);
-      if (type=='photo') {
-        const cleanedAttachment = await uploadFile(url);
-  
-          window.roamAlphaAPI.createBlock(
-        {"location": 
-          {"parent-uid": uid, 
-          "order": 'last'}, 
-        "block": 
-          {"string": cleanedAttachment}})
-      }
-    }
-  }
   // TODO catch errors
 
 
@@ -190,6 +214,9 @@ async function onload({extensionAPI}) {
   if (!extensionAPI.settings.get('tweet-template')) {
     await extensionAPI.settings.set('tweet-template', template);
   }
+  if (!extensionAPI.settings.get('image-location')) {
+    await extensionAPI.settings.set('image-location', "child block");
+  }
 
   extensionAPI.settings.panel.create(panelConfig);
   
@@ -198,7 +225,7 @@ async function onload({extensionAPI}) {
 
   roamAlphaAPI.ui.blockContextMenu.addCommand({
     label: "Extract Tweet",
-    callback: (e) => extractTweet(e['block-uid'], e['block-string'], extensionAPI.settings.get("tweet-template"))
+    callback: (e) => extractTweet(e['block-uid'], e['block-string'], extensionAPI.settings.get("tweet-template"), extensionAPI.settings.get("image-location"))
   })
 }
 
