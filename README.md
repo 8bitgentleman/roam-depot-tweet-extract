@@ -15,4 +15,11 @@
 ## Example 
   <img src="https://github.com/8bitgentleman/roam-depot-tweet-extract/raw/main/example.gif" max-width="400"></img>
   
+## Added Info
+To extract images from tweets a simple CORS proxy has been added. There is _zero_ private data to be concerned about in using a the included instance. 
+
+Click the button below and you will get a Glitch Remix of the proxy if you would like to check out the code.
+
+[![Remix on Glitch](https://cdn.glitch.com/2703baf2-b643-4da7-ab91-7ee2a2d00b5b%2Fremix-button-v2.svg)](https://glitch.com/edit/#!/roam-tweet-extract)
+
         

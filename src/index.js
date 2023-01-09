@@ -2,6 +2,7 @@
   /* v1  */
 
 var template = '[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]'
+const CORS_PROXY_URL = "https://roam-tweet-extract.glitch.me/"
 
 const panelConfig = {
   tabTitle: "Tweet Extract",
@@ -15,11 +16,11 @@ const panelConfig = {
                   template = evt.target.value;
                 }}},
       {id:     "image-location",
-      name:   "Select test",
+      name:   "Image Location",
       description: "If there are images attached to a tweet where should they be added",
       action: {type:     "select",
                 items:    ["child block", "inline"],
-                }},
+                }}
   ]
 };
 
@@ -41,7 +42,7 @@ function getInfofromTweet(htmlString){
   return [text, lastLink.text]
 }
 
-function extractCurrentBlock(uid, template){
+function extractCurrentBlock(uid, template, imageLocation){
   let query = `[:find ?s .
                   :in $ ?uid
                   :where 
@@ -51,7 +52,7 @@ function extractCurrentBlock(uid, template){
 
   let block_string = window.roamAlphaAPI.q(query,uid);
 
-  extractTweet(uid, block_string, template);
+  extractTweet(uid, block_string, template, imageLocation);
 }
 
 async function extractTweet(uid, tweet, template, imageLocation){
@@ -112,7 +113,7 @@ async function extractTweet(uid, tweet, template, imageLocation){
     const TWEET_ID = tweetURL.split("/")[5]
     // I now use a CORS proxy to get embeded tweet images. Because of this sometimes a tweet needs to be extracted multiple times
     // replace this with settings panel value
-    const CORS_PROXY_URL = "https://citrine-scratched-digit.glitch.me/"
+    
     const BASE_URL = `${CORS_PROXY_URL}https://tweetpik.com/api/tweets`
     
     async function getData(url) {
@@ -198,11 +199,12 @@ async function extractTweet(uid, tweet, template, imageLocation){
 
 // define a handler
 function keydown(e) {
+  let imageLocation = "child block"
   if ((e = e || event).ctrlKey && e.shiftKey && e.key === 'E') {
     let block = window.roamAlphaAPI.ui.getFocusedBlock()
     
     if (block != null){
-      extractCurrentBlock(block['block-uid'], template)
+      extractCurrentBlock(block['block-uid'], template, imageLocation)
     }
   }
 }
