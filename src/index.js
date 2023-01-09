@@ -18,6 +18,7 @@ const panelConfig = {
                 }}}
   ]
 };
+
 // alt tempalte [🐦]({URL}) by [{AUTHOR_NAME}]({AUTHOR_URL}) on [[{DATE}]]: {NEWLINE} {TWEET}
 function getInfofromTweet(htmlString){
   // preserve newlines
@@ -64,44 +65,110 @@ async function extractTweet(uid, tweet, template){
   } 
 
   function getTweetUrl(content) {
-      let urlsTab = linkify(content);
+    let urlsTab = linkify(content);
     if (urlsTab != null) { 
         return urlsTab[urlsTab.length - 1];
     } else { return 0; }
   }
-  let tweetURL = getTweetUrl(tweet)
-  
-  fetchJsonp("https://publish.twitter.com/oembed?omit_script=1&url=" + tweetURL)
-    .then(function(response) {
-      return response.json()
-    }).then(function(json) {
 
-      let tweetData = getInfofromTweet(json.html)
+  async function uploadFile(originalUrl) {
+    // fetch the file object from the url
+    const { file, mimeType } = await fetch(originalUrl)
+        .then(async (r) => {
+        return {
+            file: await r.blob(),
+            mimeType: r.headers.get("Content-Type"),
+        };
+        })
+        .then((obj) => obj);
+    //create a new File type to prep for upload
+    const splits = originalUrl.split("/");
+    const lastSplit = splits[splits.length - 1];
+    const newFile = new File([file], lastSplit, {
+        type: mimeType,
+    });
+    // upload the new File via roamAlphaAPI
+    const uploadTheFile = window.roamAlphaAPI.util.uploadFile;
+    const uploadedUrl =
+        (await uploadTheFile({
+        file: newFile,
+        }).then((x) => x)) ?? "file-upload-error";
+    
+    // grab the markdown for the newly uploaded file
+    const MD_IMAGE_REGEX = /\!\[\]\((.*)\)/g;
+    const strippedUrl = [...uploadedUrl.matchAll(MD_IMAGE_REGEX)];
+    const cleanUrl = strippedUrl?.[0]?.[0] ?? uploadedUrl;
 
-      let tweetText = tweetData[0];
-      let tweetDate = tweetData[1];
+    return cleanUrl;
+
+
+  }
+
+  async function getTweetData(tweetURL) {
+    const TWEET_ID = tweetURL.split("/")[5]
+    // replace this with settings panel value
+    const CORS_PROXY_URL = "https://citrine-scratched-digit.glitch.me/"
+    const BASE_URL = `${CORS_PROXY_URL}https://tweetpik.com/api/tweets`
+    
+    async function getData(url) {
+        const response = await fetch(url);
+        return response.json();
+      }
+    
       
-      let roamDate = new Date(Date.parse(tweetDate));
-      roamDate = window.roamAlphaAPI.util.dateToPageTitle(roamDate)
-      var parsedTweet = template.replaceAll('{TWEET}',tweetText);
+    let url = `${BASE_URL}/${TWEET_ID}`
+    const tweetData = await getData(url).then(async (data) => {
+      return data;
+    });
+    return tweetData;
+  }
 
-      // {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE}
-      parsedTweet = parsedTweet.replaceAll('{URL}',tweetURL);
-      parsedTweet = parsedTweet.replaceAll('{AUTHOR_NAME}',json.author_name);
-      parsedTweet = parsedTweet.replaceAll('{AUTHOR_HANDLE}',json.author_url.split('/').slice(-1));
-      parsedTweet = parsedTweet.replaceAll('{AUTHOR_URL}',json.author_url);
-      parsedTweet = parsedTweet.replaceAll('{DATE}',roamDate);
-      parsedTweet = parsedTweet.replaceAll('{NEWLINE}', "\n" );
+  let tweetURL = getTweetUrl(tweet)
+  const tweetData = await getTweetData(tweetURL);
+  
+  // extract tweet info
+  let tweetText = tweetData.text;
+  let tweetDate = tweetData.created_at;
+  
+  // convert tweet date to roam date format
+  let roamDate = new Date(Date.parse(tweetDate));
+  roamDate = window.roamAlphaAPI.util.dateToPageTitle(roamDate)
 
-      window.roamAlphaAPI.updateBlock({"block": 
+  // parse tweet with template
+  var parsedTweet = template.replaceAll('{TWEET}',tweetText);
+  
+  // {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE}
+  parsedTweet = parsedTweet.replaceAll('{URL}',tweetURL);
+  parsedTweet = parsedTweet.replaceAll('{AUTHOR_NAME}',tweetData.name);
+  parsedTweet = parsedTweet.replaceAll('{AUTHOR_HANDLE}',tweetData.username);
+  parsedTweet = parsedTweet.replaceAll('{AUTHOR_URL}',`https://twitter.com/${tweetData.username}`);
+  parsedTweet = parsedTweet.replaceAll('{DATE}',roamDate);
+  parsedTweet = parsedTweet.replaceAll('{NEWLINE}', "\n" );
+
+  window.roamAlphaAPI.updateBlock({"block": 
                   {"uid": uid,
                     "string": parsedTweet}})
 
-    }).catch(function(ex) {
-      console.log('parsing failed', ex)
-      tweet = "{{⚠ PARSE ERROR ⚠}} " + tweet
-    })
-    
+  // insert images as children for now
+  if (tweetData.media) {
+    for (const key in tweetData.media) { 
+      let type = tweetData.media[key].type
+      let url = tweetData.media[key].url
+      console.log(type,url);
+      if (type=='photo') {
+        const cleanedAttachment = await uploadFile(url);
+  
+          window.roamAlphaAPI.createBlock(
+        {"location": 
+          {"parent-uid": uid, 
+          "order": 'last'}, 
+        "block": 
+          {"string": cleanedAttachment}})
+      }
+    }
+  }
+  // TODO catch errors
+
 
 }
 
