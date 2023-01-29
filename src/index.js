@@ -229,6 +229,23 @@ async function onload({extensionAPI}) {
     label: "Extract Tweet",
     callback: (e) => extractTweet(e['block-uid'], e['block-string'], extensionAPI.settings.get("tweet-template"), extensionAPI.settings.get("image-location"))
   })
+
+  // expose it to the window
+  // create the roamdepot object on the window object if it doesn't already exist
+  if (!window.roamdepot) {
+    window.roamdepot = {};
+  }
+
+  //create the tweet-extract object on the roamdepot object if it doesn't already exist
+  if (!window.roamdepot['tweet-extract']) {
+    window.roamdepot['tweet-extract'] = {};
+  }
+
+  // define the extractTweet function
+ 
+
+  // assign the extractTweet function as a property of the tweet-extract object on the roamdepot object
+  window.roamdepot['tweet-extract'].extractTweet = extractTweet;
 }
 
 function onunload() {
@@ -239,6 +256,9 @@ function onunload() {
   roamAlphaAPI.ui.blockContextMenu.removeCommand(
     {label: "Extract Tweet"}
   )
+  // remove the extractTweet function from the tweet-extract object on the roamdepot object
+  delete window.roamdepot['tweet-extract'];
+
 }
 
 export default {
