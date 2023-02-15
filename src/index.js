@@ -197,18 +197,6 @@ async function extractTweet(uid, tweet, template, imageLocation){
 
 }
 
-// define a handler
-function keydown(e) {
-  let imageLocation = "child block"
-  if ((e = e || event).ctrlKey && e.shiftKey && e.key === 'E') {
-    let block = window.roamAlphaAPI.ui.getFocusedBlock()
-    
-    if (block != null){
-      extractCurrentBlock(block['block-uid'], template, imageLocation)
-    }
-  }
-}
-
 // move onload to async function
 async function onload({extensionAPI}) {
   console.log("load tweet extract plugin")
@@ -222,9 +210,19 @@ async function onload({extensionAPI}) {
 
   extensionAPI.settings.panel.create(panelConfig);
   
-  // register the handler
-  window.addEventListener("keydown", keydown, false);
-
+  // register the hotkey
+  extensionAPI.ui.commandPalette.addCommand({label: 'Extract Tweet', 
+               callback: () => {
+                let block = window.roamAlphaAPI.ui.getFocusedBlock()
+    
+                if (block != null){
+                  extractCurrentBlock(block['block-uid'], template, extensionAPI.settings.get('image-location'))
+                }
+               },
+               "disable-hotkey": false,
+               // this is the default hotkey, and can be customized by the user. 
+               "default-hotkey": "ctrl-shift-e"})
+  
   roamAlphaAPI.ui.blockContextMenu.addCommand({
     label: "Extract Tweet",
     callback: (e) => extractTweet(e['block-uid'], e['block-string'], extensionAPI.settings.get("tweet-template"), extensionAPI.settings.get("image-location"))
@@ -233,8 +231,6 @@ async function onload({extensionAPI}) {
 
 function onunload() {
   console.log("unload tweet extract plugin")
-
-  window.removeEventListener("keydown", keydown);
 
   roamAlphaAPI.ui.blockContextMenu.removeCommand(
     {label: "Extract Tweet"}
