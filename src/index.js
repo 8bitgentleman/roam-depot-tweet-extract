@@ -1,5 +1,6 @@
 /* Original code by matt vogel */
-  /* v1  */
+  /* v2.1  */
+import fetchJsonp from 'fetch-jsonp';
 
 var template = '[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]'
 const CORS_PROXY_URL = "https://roam-tweet-extract.glitch.me/"
@@ -25,8 +26,9 @@ const panelConfig = {
 };
 
 // alt tempalte [🐦]({URL}) by [{AUTHOR_NAME}]({AUTHOR_URL}) on [[{DATE}]]: {NEWLINE} {TWEET}
-function getInfofromTweet(htmlString){
+function getInfofromTweetJSON(tweetJSON){
   // preserve newlines
+  let htmlString= tweetJSON.html
   htmlString = htmlString.replaceAll("<br>", "{NEWLINE}");
 
   let htmlObject = document.createElement('div');
@@ -35,12 +37,26 @@ function getInfofromTweet(htmlString){
   let paragraph = htmlObject.querySelector("p")
 
   let text = paragraph.innerText || paragraph.textContent;
-
   let links = htmlObject.querySelectorAll("a")
   let lastLink = links[links.length - 1]
-  
-  return [text, lastLink.text]
+
+  tweetJSON.text = text;
+  tweetJSON.created_at = lastLink.innerText;
+  tweetJSON.name = tweetJSON.author_name
+  tweetJSON.username = tweetJSON.author_url.split('/').pop()
+  return tweetJSON
 }
+
+function getTweetEmbed(tweetURL){
+  console.error('Fallback to tweet oembed')
+  // fallback function to get limited tweet data, no media included
+  return fetchJsonp("https://publish.twitter.com/oembed?omit_script=1&url=" + tweetURL)
+    .then(function(response) {
+      return response.json()
+    }).then(function(json) {
+      return getInfofromTweetJSON(json)
+    })
+  }
 
 function extractCurrentBlock(uid, template, imageLocation){
   let query = `[:find ?s .
@@ -111,27 +127,39 @@ async function extractTweet(uid, tweet, template, imageLocation){
 
   async function getTweetData(tweetURL) {
     const TWEET_ID = tweetURL.split("/")[5]
-    // I now use a CORS proxy to get embeded tweet images. Because of this sometimes a tweet needs to be extracted multiple times
-    // replace this with settings panel value
+    // If the twitter API is being nice (not crazy rate limiting) I use a CORS proxy to get embeded tweet images. 
+    // Because of this sometimes a tweet needs to be extracted multiple times
     
     const BASE_URL = `${CORS_PROXY_URL}https://tweetpik.com/api/tweets`
     
     async function getData(url) {
         const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`HTTP error! Twitter API returns status: ${response.status}`);
+        }
         return response.json();
       }
     
       
     let url = `${BASE_URL}/${TWEET_ID}`
-    const tweetData = await getData(url).then(async (data) => {
-      return data;
-    });
-    return tweetData;
+    try {
+      const tweetData = await getData(url);
+      return tweetData;
+    } catch (error) {
+      // console.error(error);
+      return null;
+    }
   }
 
-  let tweetURL = getTweetUrl(tweet)
-  const tweetData = await getTweetData(tweetURL);
-  // console.log(tweetData)
+  let tweetURL = getTweetUrl(tweet);
+  // let tweetData = await getTweetData(tweetURL);
+  // parsing via API has been disabled for now until the API is less volatile 
+  // if (tweetData === null) {
+  //   tweetData = await getTweetEmbed(tweetURL);
+  //   console.log(tweetData)
+  // }
+  let tweetData = await getTweetEmbed(tweetURL);
+  console.log("DATA HERE", tweetData)
   // extract tweet info
   let tweetText = tweetData.text;
   let tweetDate = tweetData.created_at;

@@ -1,5 +1,7 @@
   Roam Research Plugin to extract saved tweet text into your graph. 
-
+  
+  *NOTE: Because of recent changes to Twitter's API, image extraction has temporarily been disabled*
+  
   To set up the format of your extracted tweet a simple template system is included, found in the Roam Depot plugin settings panel. For each supported `{OPTION}` the variable will be replaced with the extracted tweet information.
 
   Options available to the template are `{TWEET}`, `{URL}`, `{AUTHOR_NAME}`, `{AUTHOR_HANDLE}`, `{AUTHOR_URL}`, `{DATE}`, `{NEWLINE}`, `{IMAGES}`.  A default temlpate is included.
