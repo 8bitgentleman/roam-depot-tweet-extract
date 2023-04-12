@@ -48,7 +48,6 @@ function getInfofromTweetJSON(tweetJSON){
 }
 
 function getTweetEmbed(tweetURL){
-  console.error('Fallback to tweet oembed')
   // fallback function to get limited tweet data, no media included
   return fetchJsonp("https://publish.twitter.com/oembed?omit_script=1&url=" + tweetURL)
     .then(function(response) {
@@ -130,7 +129,7 @@ async function extractTweet(uid, tweet, template, imageLocation){
     // If the twitter API is being nice (not crazy rate limiting) I use a CORS proxy to get embeded tweet images. 
     // Because of this sometimes a tweet needs to be extracted multiple times
     
-    const BASE_URL = `${CORS_PROXY_URL}https://tweetpik.com/api/tweets`
+    const BASE_URL = `${CORS_PROXY_URL}https://tweetpik.com/api/v2/tweets?url=`
     
     async function getData(url) {
         const response = await fetch(url);
@@ -141,25 +140,54 @@ async function extractTweet(uid, tweet, template, imageLocation){
       }
     
       
-    let url = `${BASE_URL}/${TWEET_ID}`
-    try {
-      const tweetData = await getData(url);
-      return tweetData;
-    } catch (error) {
-      // console.error(error);
-      return null;
-    }
+    let url = `${BASE_URL}${tweetURL}`
+    const tweetData = await getData(url).then(async (data) => {
+      return data;
+    });
+    return tweetData;
   }
 
   let tweetURL = getTweetUrl(tweet);
-  // let tweetData = await getTweetData(tweetURL);
-  // parsing via API has been disabled for now until the API is less volatile 
-  // if (tweetData === null) {
-  //   tweetData = await getTweetEmbed(tweetURL);
-  //   console.log(tweetData)
-  // }
+  // parsing via API is skipped if the API is  volatile 
+  // I always use the oembed because some info is easier to get there
+
   let tweetData = await getTweetEmbed(tweetURL);
+
+  try {
+    let apiTweetData = await getTweetData(tweetURL);
+    if (apiTweetData === null) {
+      apiTweetData = await getTweetEmbed(tweetURL);
+      console.log("tweetData was null",apiTweetData)
+    }
+    // choosing the first index for now
+    // TODO parse tweet threads 😁
+    apiTweetData = apiTweetData[0]
+    console.log(apiTweetData)
+
+    // check if media exists
+    if (apiTweetData.photos.length > 0) {
+      console.log("pictures exist");
+      // add to tweetData in correct format (for backwards compatibility)
+      let photos = apiTweetData.photos.map((url) => {
+        return {
+          url: url,
+          type: 'photo'
+        };
+      });
+      tweetData.media = photos;
+
+    } 
+
+  } catch (error) {
+    console.error("Tweet Extraction API failure. Falling back to simple extraction.");
+    console.error(error);
+    // handle the error by calling a different function
+    tweetData = await getTweetEmbed(tweetURL);
+  }
+
+  
   console.log("DATA HERE", tweetData)
+
   // extract tweet info
   let tweetText = tweetData.text;
   let tweetDate = tweetData.created_at;
