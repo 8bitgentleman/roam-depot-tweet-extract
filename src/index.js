@@ -70,6 +70,88 @@ function extractCurrentBlock(uid, template, imageLocation){
   extractTweet(uid, block_string, template, imageLocation);
 }
 
+function extractCurrentBlockTweetThread(uid, template, imageLocation){
+  let query = `[:find ?s .
+                  :in $ ?uid
+                  :where 
+                    [?e :block/uid ?uid]
+                    [?e :block/string ?s]
+                ]`;
+
+  let block_string = window.roamAlphaAPI.q(query,uid);
+
+  extractThread(uid, block_string, template, imageLocation);
+}
+
+async function uploadFile(originalUrl) {
+  // fetch the file object from the url
+  const { file, mimeType } = await fetch(originalUrl)
+      .then(async (r) => {
+      return {
+          file: await r.blob(),
+          mimeType: r.headers.get("Content-Type"),
+      };
+      })
+      .then((obj) => obj);
+  //create a new File type to prep for upload
+  const splits = originalUrl.split("/");
+  const lastSplit = splits[splits.length - 1];
+  const newFile = new File([file], lastSplit, {
+      type: mimeType,
+  });
+  // upload the new File via roamAlphaAPI
+  const uploadTheFile = window.roamAlphaAPI.util.uploadFile;
+  const uploadedUrl =
+      (await uploadTheFile({
+      file: newFile,
+      }).then((x) => x)) ?? "file-upload-error";
+  
+  // grab the markdown for the newly uploaded file
+  const MD_IMAGE_REGEX = /\!\[\]\((.*)\)/g;
+  const strippedUrl = [...uploadedUrl.matchAll(MD_IMAGE_REGEX)];
+  const cleanUrl = strippedUrl?.[0]?.[0] ?? uploadedUrl;
+
+  return cleanUrl;
+
+
+}
+
+function linkify(text) {
+  const regex =/(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/;
+  var urlRegex = new RegExp(regex, 'ig');
+  return text.match(urlRegex);
+} 
+
+function getTweetUrl(content) {
+  let urlsTab = linkify(content);
+  if (urlsTab != null) { 
+      return urlsTab[urlsTab.length - 1];
+  } else { return 0; }
+}
+
+async function getTweetData(tweetURL) {
+  const TWEET_ID = tweetURL.split("/")[5]
+  // If the twitter API is being nice (not crazy rate limiting) I use a CORS proxy to get embeded tweet images. 
+  // Because of this sometimes a tweet needs to be extracted multiple times
+  
+  const BASE_URL = `${CORS_PROXY_URL}https://tweetpik.com/api/v2/tweets?url=`
+  
+  async function getData(url) {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP error! Twitter API returns status: ${response.status}`);
+      }
+      return response.json();
+    }
+  
+    
+  let url = `${BASE_URL}${tweetURL}`
+  const tweetData = await getData(url).then(async (data) => {
+    return data;
+  });
+  return tweetData;
+}
+
 async function extractTweet(uid, tweet, template, imageLocation){
   // for some reason settings placeholders are coming in as null on first load.
   // have to load in the default template manually then. This may bite me later on...
@@ -77,75 +159,8 @@ async function extractTweet(uid, tweet, template, imageLocation){
   if(template==null || template==''){
     template = "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on {DATE}";
   }
-  const regex =/(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/;
-  var urlRegex = new RegExp(regex, 'ig');
+
   
-  function linkify(text) {
-    return text.match(urlRegex);
-  } 
-
-  function getTweetUrl(content) {
-    let urlsTab = linkify(content);
-    if (urlsTab != null) { 
-        return urlsTab[urlsTab.length - 1];
-    } else { return 0; }
-  }
-
-  async function uploadFile(originalUrl) {
-    // fetch the file object from the url
-    const { file, mimeType } = await fetch(originalUrl)
-        .then(async (r) => {
-        return {
-            file: await r.blob(),
-            mimeType: r.headers.get("Content-Type"),
-        };
-        })
-        .then((obj) => obj);
-    //create a new File type to prep for upload
-    const splits = originalUrl.split("/");
-    const lastSplit = splits[splits.length - 1];
-    const newFile = new File([file], lastSplit, {
-        type: mimeType,
-    });
-    // upload the new File via roamAlphaAPI
-    const uploadTheFile = window.roamAlphaAPI.util.uploadFile;
-    const uploadedUrl =
-        (await uploadTheFile({
-        file: newFile,
-        }).then((x) => x)) ?? "file-upload-error";
-    
-    // grab the markdown for the newly uploaded file
-    const MD_IMAGE_REGEX = /\!\[\]\((.*)\)/g;
-    const strippedUrl = [...uploadedUrl.matchAll(MD_IMAGE_REGEX)];
-    const cleanUrl = strippedUrl?.[0]?.[0] ?? uploadedUrl;
-
-    return cleanUrl;
-
-
-  }
-
-  async function getTweetData(tweetURL) {
-    const TWEET_ID = tweetURL.split("/")[5]
-    // If the twitter API is being nice (not crazy rate limiting) I use a CORS proxy to get embeded tweet images. 
-    // Because of this sometimes a tweet needs to be extracted multiple times
-    
-    const BASE_URL = `${CORS_PROXY_URL}https://tweetpik.com/api/v2/tweets?url=`
-    
-    async function getData(url) {
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`HTTP error! Twitter API returns status: ${response.status}`);
-        }
-        return response.json();
-      }
-    
-      
-    let url = `${BASE_URL}${tweetURL}`
-    const tweetData = await getData(url).then(async (data) => {
-      return data;
-    });
-    return tweetData;
-  }
 
   let tweetURL = getTweetUrl(tweet);
   // parsing via API is skipped if the API is  volatile 
@@ -181,13 +196,10 @@ async function extractTweet(uid, tweet, template, imageLocation){
   } catch (error) {
     console.error("Tweet Extraction API failure. Falling back to simple extraction.");
     console.error(error);
-    // handle the error by calling a different function
-    tweetData = await getTweetEmbed(tweetURL);
+    // tweetData = await getTweetEmbed(tweetURL);
   }
 
   
-  console.log("DATA HERE", tweetData)
-
   // extract tweet info
   let tweetText = tweetData.text;
   let tweetDate = tweetData.created_at;
@@ -253,6 +265,103 @@ async function extractTweet(uid, tweet, template, imageLocation){
 
 }
 
+
+function filterThreadObjectByName(threadObject) {
+  const tempArray = [];
+  const firstItemName = threadObject[0].name;
+  
+  for (const item of threadObject) {
+    if (item.name === firstItemName) {
+      tempArray.push(item);
+    } else {
+      break;
+    }
+  }
+  
+  return tempArray;
+}
+
+
+function getTextFromHtmlString(htmlString) {
+  const parser = new DOMParser();
+  const html = parser.parseFromString(htmlString, "text/html");
+  return html.body.textContent;
+} 
+
+async function createTweetBlock(parentUID,text){
+  let uid = roamAlphaAPI.util.generateUID();
+  await window.roamAlphaAPI.createBlock(
+      {"location": 
+        {"parent-uid": parentUID, 
+        "order": 'last'}, 
+      "block": 
+      {"string": text,
+      "uid"  : uid}})
+  return uid;
+}
+
+async function extractThread(uid, tweet, template, imageLocation){
+  let tweetURL = getTweetUrl(tweet);
+  console.log(tweetURL)
+  try {
+      let apiTweetData = await getTweetData(tweetURL);
+      console.log(apiTweetData)
+      const filteredThread = filterThreadObjectByName(apiTweetData);
+      // this parentuid is a temp solution, really should replace the parent
+
+      let parentUID = uid;
+  for (const element of filteredThread) {
+    // do parsing of tweet here
+      let threadTweetData = await getTweetEmbed(element.url);
+      let tweetText = threadTweetData.text;
+      let tweetDate = threadTweetData.created_at;
+      
+      // convert tweet date to roam date format
+      let roamDate = new Date(Date.parse(tweetDate));
+      roamDate = window.roamAlphaAPI.util.dateToPageTitle(roamDate)
+
+      // parse tweet with template
+      var parsedTweet = template.replaceAll('{TWEET}',tweetText);
+      
+      // {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE}, {IMAGES}
+      parsedTweet = parsedTweet.replaceAll('{URL}',element.url);
+      parsedTweet = parsedTweet.replaceAll('{AUTHOR_NAME}',threadTweetData.name);
+      parsedTweet = parsedTweet.replaceAll('{AUTHOR_HANDLE}',threadTweetData.username);
+      parsedTweet = parsedTweet.replaceAll('{AUTHOR_URL}',`https://twitter.com/${threadTweetData.username}`);
+      parsedTweet = parsedTweet.replaceAll('{DATE}',roamDate);
+      parsedTweet = parsedTweet.replaceAll('{NEWLINE}', "\n" );
+
+      if (element === filteredThread[0]) {
+          // Do something different with the first element
+          window.roamAlphaAPI.updateBlock({"block": 
+                {"uid": parentUID,
+                  "string": parsedTweet}})
+      } else {
+          // Do something with the other elements
+      
+          let tempParentUID = await createTweetBlock(parentUID, parsedTweet);
+          if (element.photos.length > 0) {
+              console.log("pictures exist");
+              // add to tweetData in correct format (for backwards compatibility)
+              let photos = element.photos.map((url) => {
+              return {
+                  url: url,
+                  type: 'photo'
+              };
+              });
+              
+              for (const photo of photos) {
+                  createTweetBlock(tempParentUID, await uploadFile(photo.url))
+              }
+          } 
+      }
+    }
+  } catch (error) {
+      console.error("Thread Extraction API failure.");
+      console.error(error);
+    }
+}
+
 // move onload to async function
 async function onload({extensionAPI}) {
   console.log("load tweet extract plugin")
@@ -279,9 +388,25 @@ async function onload({extensionAPI}) {
                // this is the default hotkey, and can be customized by the user. 
                "default-hotkey": "ctrl-shift-e"})
   
-  roamAlphaAPI.ui.blockContextMenu.addCommand({
+  extensionAPI.ui.commandPalette.addCommand({label: 'Extract 🧵', 
+    callback: () => {
+      let block = window.roamAlphaAPI.ui.getFocusedBlock()
+
+      if (block != null){
+        extractCurrentBlockTweetThread(block['block-uid'], extensionAPI.settings.get('image-location'))
+      }
+    },
+    "disable-hotkey": false,
+    // this is the default hotkey, and can be customized by the user. 
+    "default-hotkey": "ctrl-shift-t"})
+  
+    roamAlphaAPI.ui.blockContextMenu.addCommand({
     label: "Extract Tweet",
     callback: (e) => extractTweet(e['block-uid'], e['block-string'], extensionAPI.settings.get("tweet-template"), extensionAPI.settings.get("image-location"))
+  })
+  roamAlphaAPI.ui.blockContextMenu.addCommand({
+    label: "Extract 🧵",
+    callback: (e) => extractThread(e['block-uid'], e['block-string'], extensionAPI.settings.get("tweet-template"), extensionAPI.settings.get("image-location"))
   })
 }
 
