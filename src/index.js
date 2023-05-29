@@ -21,7 +21,28 @@ const panelConfig = {
       description: "If there are images attached to a tweet where should they be added",
       action: {type:     "select",
                 items:    ["child block", "inline"],
-                }}
+                }},
+      {id:          "auto-extract",
+      name:        "Auto Extract",
+      description: "When Roam loads if there are blocks tagged with the `Auto Tweet Extract Tag` or `Auto Thread Extract Tag` they will be automatically extracted. Useful with",
+      action:      {type:     "switch",
+                    onChange: (evt) => { console.log("Switch!", evt); }}},
+      {id:     "auto-extract-tag",
+      name:   "Auto Tweet Extract Tag",
+      description: "",
+      action: {type:        "input",
+                placeholder: "tweet-extract",
+                onChange:    (evt) => { 
+                  template = evt.target.value;
+                }}}, 
+      {id:     "auto-thread-tag",
+      name:   "Auto Thread Extract Tag",
+      description: "",
+      action: {type:        "input",
+                placeholder: "thread-extract",
+                onChange:    (evt) => { 
+                  template = evt.target.value;
+                }}}, 
   ]
 };
 
@@ -265,7 +286,6 @@ async function extractTweet(uid, tweet, template, imageLocation){
 
 }
 
-
 function filterThreadObjectByName(threadObject) {
   const tempArray = [];
   const firstItemName = threadObject[0].name;
@@ -280,7 +300,6 @@ function filterThreadObjectByName(threadObject) {
   
   return tempArray;
 }
-
 
 function getTextFromHtmlString(htmlString) {
   const parser = new DOMParser();
@@ -362,6 +381,19 @@ async function extractThread(uid, tweet, template, imageLocation){
     }
 }
 
+function getPageRefs(page){
+  let query = `[:find (pull ?refs [:block/string :node/title :block/uid])
+                :in $ ?namespace
+                :where
+                  [?e :node/title ?namespace]
+                  [?refs :block/refs ?e]
+                ]`;
+  
+    let result = window.roamAlphaAPI.q(query,page).flat();
+    
+    return result;
+}
+
 // move onload to async function
 async function onload({extensionAPI}) {
   console.log("load tweet extract plugin")
@@ -372,10 +404,15 @@ async function onload({extensionAPI}) {
   if (!extensionAPI.settings.get('image-location')) {
     await extensionAPI.settings.set('image-location', "child block");
   }
-
+  if (!extensionAPI.settings.get('auto-extract-tag')) {
+    await extensionAPI.settings.set('auto-extract-tag', "tweet-extract");
+  }
+  if (!extensionAPI.settings.get('auto-thread-tag')) {
+    await extensionAPI.settings.set('auto-thread-tag', "thread-extract");
+  }
   extensionAPI.settings.panel.create(panelConfig);
   
-  // register the hotkey
+  // register the hotkeys
   extensionAPI.ui.commandPalette.addCommand({label: 'Extract Tweet', 
                callback: () => {
                 let block = window.roamAlphaAPI.ui.getFocusedBlock()
@@ -400,6 +437,7 @@ async function onload({extensionAPI}) {
     // this is the default hotkey, and can be customized by the user. 
     "default-hotkey": "ctrl-shift-t"})
   
+  // register the right click buttons
     roamAlphaAPI.ui.blockContextMenu.addCommand({
     label: "Extract Tweet",
     callback: (e) => extractTweet(e['block-uid'], e['block-string'], extensionAPI.settings.get("tweet-template"), extensionAPI.settings.get("image-location"))
@@ -408,6 +446,41 @@ async function onload({extensionAPI}) {
     label: "Extract 🧵",
     callback: (e) => extractThread(e['block-uid'], e['block-string'], extensionAPI.settings.get("tweet-template"), extensionAPI.settings.get("image-location"))
   })
+  // auto extract
+  if (extensionAPI.settings.get('auto-extract')) {
+    let tweets = await getPageRefs(extensionAPI.settings.get('auto-extract-tag'));
+    let threads = await getPageRefs(extensionAPI.settings.get('auto-thread-tag'));
+  
+    // single tweets
+    for (const tweet of tweets) {
+      try {
+        await extractTweet(
+          tweet.uid,
+          tweet.string,
+          extensionAPI.settings.get('tweet-template'),
+          extensionAPI.settings.get('image-location')
+        )
+      } catch (error) {
+        console.error(error, tweet)
+      }
+        
+    }
+
+    // threads
+    for (const thread of threads) {
+      try {
+        await extractThread(
+          thread.uid,
+          thread.string,
+          extensionAPI.settings.get('tweet-template'),
+          extensionAPI.settings.get('image-location')
+        )
+      } catch (error) {
+        console.error(error, tweet)
+      }
+        
+    }
+  }
 }
 
 function onunload() {
