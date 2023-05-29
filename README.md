@@ -12,7 +12,7 @@
 
   To trigger the tweet extraction you have two options: Right click plugin or keyboard shortcut
 
-  To trigger via a keyboard shortcut click into the block and hit a `CTRL` + `SHIFT` + `E`. (will be remapable soon)
+  To trigger via a keyboard shortcut click into the block and hit a `CTRL` + `SHIFT` + `E`. 
 
 ## Example 
   <img src="https://github.com/8bitgentleman/roam-depot-tweet-extract/raw/main/example.gif" max-width="400"></img>
