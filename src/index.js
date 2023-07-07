@@ -24,7 +24,7 @@ const panelConfig = {
                 }},
       {id:          "auto-extract",
       name:        "Auto Extract",
-      description: "When Roam loads if there are blocks tagged with the `Auto Tweet Extract Tag` or `Auto Thread Extract Tag` they will be automatically extracted. Useful with",
+      description: "When Roam loads if there are blocks tagged with the `Auto Tweet Extract Tag` or `Auto Thread Extract Tag` they will be automatically extracted. Useful with Quick Capture solutions.",
       action:      {type:     "switch",
                     onChange: (evt) => { console.log("Switch!", evt); }}},
       {id:     "auto-extract-tag",
@@ -68,6 +68,71 @@ function getInfofromTweetJSON(tweetJSON){
   return tweetJSON
 }
 
+function addSpinner(blockUID) {
+  const MySpinner = React.createElement(
+    window.Blueprint.Core.Spinner,
+    { intent: "primary", size: Blueprint.Core.SpinnerSize.SMALL },
+    null
+  );
+
+  // Get all div and textarea elements
+  const elements = document.querySelectorAll('div, textarea');
+
+  // Iterate over all elements
+  for(let i = 0; i < elements.length; i++) {
+      const element = elements[i];
+
+      // Check if id contains "block-input" and blockUID
+      if(element.id.includes('block-input') && element.id.includes(blockUID)) {
+          // Create a new spinner
+          const tweetSpinner = document.createElement('div');
+          tweetSpinner.className = "tweet-extract-pending";
+          tweetSpinner.style.marginRight = "10px";
+          ReactDOM.render(MySpinner, tweetSpinner);
+
+          // If the element is a textarea, insert the spinner before the parent of the parent of the element
+          if(element.tagName.toLowerCase() === 'textarea') {
+              element.parentNode.parentNode.insertBefore(tweetSpinner, element.parentNode);
+          } else {
+              // Otherwise, insert the spinner before the element
+              element.parentNode.insertBefore(tweetSpinner, element);
+          }
+          break;
+      }
+  }
+}
+
+function removeSpinner(blockUID) {
+  // Get all div elements with class "tweet-extract-pending"
+  const divs = document.getElementsByClassName('tweet-extract-pending');
+
+  // Iterate over all divs in reverse order (to avoid issues with live HTMLCollection)
+  for(let i = divs.length - 1; i >= 0; i--) {
+      const div = divs[i];
+
+      // Check if the next sibling div has class "rm-autocomplete__wrapper" or contains the specific id
+      const nextDiv = div.nextElementSibling;
+      if(nextDiv) {
+          if(nextDiv.id.includes('block-input') && nextDiv.id.includes(blockUID)) {
+            console.log('regular block')
+              // Remove the div if it's above the correct block
+              console.log(div);
+              div.parentNode.removeChild(div);
+          } else if(nextDiv.classList.contains('rm-autocomplete__wrapper')) {
+            console.log('text area open')
+              // Check the first child of the next div for a div with id that contains "block-input" and blockUID
+              const firstChildDiv = nextDiv.firstChild;
+              console.log(firstChildDiv)
+              if(firstChildDiv && firstChildDiv.id.includes('block-input') && firstChildDiv.id.includes(blockUID)) {
+                  // Remove the div
+                  console.log(div);
+                  div.parentNode.removeChild(div);
+              }
+          }
+      }
+  }
+}
+
 function getTweetEmbed(tweetURL){
   // fallback function to get limited tweet data, no media included
   return fetchJsonp("https://publish.twitter.com/oembed?omit_script=1&url=" + tweetURL)
@@ -85,9 +150,8 @@ function extractCurrentBlock(uid, template, imageLocation){
                     [?e :block/uid ?uid]
                     [?e :block/string ?s]
                 ]`;
-
+  console.log("extractCurrentBlock")
   let block_string = window.roamAlphaAPI.q(query,uid);
-
   extractTweet(uid, block_string, template, imageLocation);
 }
 
@@ -100,7 +164,6 @@ function extractCurrentBlockTweetThread(uid, template, imageLocation){
                 ]`;
 
   let block_string = window.roamAlphaAPI.q(query,uid);
-
   extractThread(uid, block_string, template, imageLocation);
 }
 
@@ -180,15 +243,16 @@ async function extractTweet(uid, tweet, template, imageLocation){
   if(template==null || template==''){
     template = "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on {DATE}";
   }
-
-  
+  console.log("extract tweet function")
+  // add a spinner to show we're doing something
+  addSpinner(uid)
 
   let tweetURL = getTweetUrl(tweet);
   // parsing via API is skipped if the API is  volatile 
   // I always use the oembed because some info is easier to get there
 
   let tweetData = await getTweetEmbed(tweetURL);
-
+  console.log(tweetData)
   try {
     let apiTweetData = await getTweetData(tweetURL);
     if (apiTweetData === null) {
@@ -283,6 +347,8 @@ async function extractTweet(uid, tweet, template, imageLocation){
                     "string": parsedTweet}})
   // TODO catch errors
 
+  //remove the spinner
+  removeSpinner(uid)
 
 }
 
@@ -320,6 +386,9 @@ async function createTweetBlock(parentUID,text){
 }
 
 async function extractThread(uid, tweet, template, imageLocation){
+  // add a spinner to show we're doing something
+  addSpinner(uid)
+
   let tweetURL = getTweetUrl(tweet);
   console.log(tweetURL)
   try {
@@ -379,6 +448,8 @@ async function extractThread(uid, tweet, template, imageLocation){
       console.error("Thread Extraction API failure.");
       console.error(error);
     }
+  //remove spinner
+  removeSpinner(uid)
 }
 
 function getPageRefs(page){
@@ -416,7 +487,7 @@ async function onload({extensionAPI}) {
   extensionAPI.ui.commandPalette.addCommand({label: 'Extract Tweet', 
                callback: () => {
                 let block = window.roamAlphaAPI.ui.getFocusedBlock()
-    
+                console.log("commandPalette extract", block['block-uid'])
                 if (block != null){
                   extractCurrentBlock(block['block-uid'], template, extensionAPI.settings.get('image-location'))
                 }
@@ -425,7 +496,7 @@ async function onload({extensionAPI}) {
                // this is the default hotkey, and can be customized by the user. 
                "default-hotkey": "ctrl-shift-e"})
   
-  extensionAPI.ui.commandPalette.addCommand({label: 'Extract 🧵', 
+  extensionAPI.ui.commandPalette.addCommand({label: 'Extract Tweet Thread', 
     callback: () => {
       let block = window.roamAlphaAPI.ui.getFocusedBlock()
 
@@ -438,14 +509,19 @@ async function onload({extensionAPI}) {
     "default-hotkey": "ctrl-shift-t"})
   
   // register the right click buttons
-    roamAlphaAPI.ui.blockContextMenu.addCommand({
+  roamAlphaAPI.ui.blockContextMenu.addCommand({
     label: "Extract Tweet",
-    callback: (e) => extractTweet(e['block-uid'], e['block-string'], extensionAPI.settings.get("tweet-template"), extensionAPI.settings.get("image-location"))
+    callback: (e) => extractTweet(
+                        e['block-uid'],
+                        e['block-string'],
+                        extensionAPI.settings.get("tweet-template"),
+                        extensionAPI.settings.get("image-location"))
   })
   roamAlphaAPI.ui.blockContextMenu.addCommand({
-    label: "Extract 🧵",
+    label: "Extract Tweet Thread",
     callback: (e) => extractThread(e['block-uid'], e['block-string'], extensionAPI.settings.get("tweet-template"), extensionAPI.settings.get("image-location"))
   })
+
   // auto extract
   if (extensionAPI.settings.get('auto-extract')) {
     let tweets = await getPageRefs(extensionAPI.settings.get('auto-extract-tag'));
