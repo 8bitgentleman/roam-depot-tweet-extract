@@ -2,8 +2,16 @@
   /* v2.1  */
 import fetchJsonp from 'fetch-jsonp';
 
-var template = '[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]'
+var defaultTweetTemplate = '[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]'
 const CORS_PROXY_URL = "https://roam-tweet-extract.glitch.me/"
+
+function getTweetTemplate(extensionAPI) {
+  return extensionAPI.settings.get('tweet-template') || defaultTweetTemplate
+}
+
+function getimageLocation(extensionAPI) {
+  return extensionAPI.settings.get('image-location') || "child block"
+}
 
 const panelConfig = {
   tabTitle: "Tweet Extract",
@@ -12,10 +20,8 @@ const panelConfig = {
        name:   "Tweet Template",
        description: "variables available are {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE}, {IMAGES} as well as all Roam syntax",
        action: {type:        "input",
-                placeholder: "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_HANDLE} on [[{DATE}]]",
-                onChange:    (evt) => { 
-                  template = evt.target.value;
-                }}},
+                placeholder: defaultTweetTemplate,
+                }},
       {id:     "image-location",
       name:   "Image Location",
       description: "If there are images attached to a tweet where should they be added",
@@ -71,12 +77,6 @@ function extractCurrentBlock(uid, template, imageLocation){
 }
 
 async function extractTweet(uid, tweet, template, imageLocation){
-  // for some reason settings placeholders are coming in as null on first load.
-  // have to load in the default template manually then. This may bite me later on...
-  // also dealing with if people completely delete the template by accident
-  if(template==null || template==''){
-    template = "[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on {DATE}";
-  }
   const regex =/(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/;
   var urlRegex = new RegExp(regex, 'ig');
   
@@ -256,13 +256,6 @@ async function extractTweet(uid, tweet, template, imageLocation){
 // move onload to async function
 async function onload({extensionAPI}) {
   console.log("load tweet extract plugin")
-  // set default setting
-  if (!extensionAPI.settings.get('tweet-template')) {
-    await extensionAPI.settings.set('tweet-template', template);
-  }
-  if (!extensionAPI.settings.get('image-location')) {
-    await extensionAPI.settings.set('image-location', "child block");
-  }
 
   extensionAPI.settings.panel.create(panelConfig);
   
@@ -272,7 +265,7 @@ async function onload({extensionAPI}) {
                 let block = window.roamAlphaAPI.ui.getFocusedBlock()
     
                 if (block != null){
-                  extractCurrentBlock(block['block-uid'], template, extensionAPI.settings.get('image-location'))
+                  extractCurrentBlock(block['block-uid'], getTweetTemplate(extensionAPI), getimageLocation(extensionAPI))
                 }
                },
                "disable-hotkey": false,
@@ -281,7 +274,7 @@ async function onload({extensionAPI}) {
   
   roamAlphaAPI.ui.blockContextMenu.addCommand({
     label: "Extract Tweet",
-    callback: (e) => extractTweet(e['block-uid'], e['block-string'], extensionAPI.settings.get("tweet-template"), extensionAPI.settings.get("image-location"))
+    callback: (e) => extractTweet(e['block-uid'], e['block-string'], getTweetTemplate(extensionAPI), getimageLocation(extensionAPI))
   })
 }
 
