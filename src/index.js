@@ -53,6 +53,73 @@ function getInfofromTweetJSON(tweetJSON){
   return tweetJSON
 }
 
+function addSpinner(blockUID) {
+  const MySpinner = React.createElement(
+    window.Blueprint.Core.Spinner,
+    { intent: "primary", size: Blueprint.Core.SpinnerSize.SMALL },
+    null
+  );
+
+  // Get all div and textarea elements
+  const elements = document.querySelectorAll('div, textarea');
+
+  // Iterate over all elements
+  for(let i = 0; i < elements.length; i++) {
+      const element = elements[i];
+
+      // Check if id contains "block-input" and blockUID
+      if(element.id.includes('block-input') && element.id.includes(blockUID)) {
+          // Create a new spinner
+          const tweetSpinner = document.createElement('div');
+          tweetSpinner.className = "tweet-extract-pending";
+          tweetSpinner.style.marginRight = "10px";
+          tweetSpinner.style.marginTop = "5px";
+          tweetSpinner.style.width = "24px";
+          ReactDOM.render(MySpinner, tweetSpinner);
+
+          // If the element is a textarea, insert the spinner before the parent of the parent of the element
+          if(element.tagName.toLowerCase() === 'textarea') {
+              element.parentNode.parentNode.insertBefore(tweetSpinner, element.parentNode);
+          } else {
+              // Otherwise, insert the spinner before the element
+              element.parentNode.insertBefore(tweetSpinner, element);
+          }
+          break;
+      }
+  }
+}
+
+function removeSpinner(blockUID) {
+  // Get all div elements with class "tweet-extract-pending"
+  const divs = document.getElementsByClassName('tweet-extract-pending');
+
+  // Iterate over all divs in reverse order (to avoid issues with live HTMLCollection)
+  for(let i = divs.length - 1; i >= 0; i--) {
+      const div = divs[i];
+
+      // Check if the next sibling div has class "rm-autocomplete__wrapper" or contains the specific id
+      const nextDiv = div.nextElementSibling;
+      if(nextDiv) {
+          if(nextDiv.id.includes('block-input') && nextDiv.id.includes(blockUID)) {
+            console.log('regular block')
+              // Remove the div if it's above the correct block
+              console.log(div);
+              div.parentNode.removeChild(div);
+          } else if(nextDiv.classList.contains('rm-autocomplete__wrapper')) {
+            console.log('text area open')
+              // Check the first child of the next div for a div with id that contains "block-input" and blockUID
+              const firstChildDiv = nextDiv.firstChild;
+              console.log(firstChildDiv)
+              if(firstChildDiv && firstChildDiv.id.includes('block-input') && firstChildDiv.id.includes(blockUID)) {
+                  // Remove the div
+                  console.log(div);
+                  div.parentNode.removeChild(div);
+              }
+          }
+      }
+  }
+}
+
 function getTweetEmbed(tweetURL){
   // fallback function to get limited tweet data, no media included
   return fetchJsonp("https://publish.twitter.com/oembed?omit_script=1&url=" + tweetURL)
@@ -77,6 +144,9 @@ function extractCurrentBlock(uid, template, imageLocation){
 }
 
 async function extractTweet(uid, tweet, template, imageLocation){
+  // add a spinner to show we're doing something
+  addSpinner(uid)
+
   const regex =/(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/;
   var urlRegex = new RegExp(regex, 'ig');
   
@@ -255,7 +325,8 @@ async function extractTweet(uid, tweet, template, imageLocation){
                     "string": parsedTweet}})
   // TODO catch errors
 
-
+    //remove the spinner
+    removeSpinner(uid)
 }
 
 // move onload to async function
