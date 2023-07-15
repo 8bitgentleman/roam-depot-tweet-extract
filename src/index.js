@@ -26,7 +26,7 @@ const panelConfig = {
       name:   "Image Location",
       description: "If there are images attached to a tweet where should they be added",
       action: {type:     "select",
-                items:    ["child block", "inline"],
+                items:    ["child block", "inline", "skip images"],
                 }}
   ]
 };
@@ -186,7 +186,7 @@ async function extractTweet(uid, tweet, template, imageLocation){
   }
 
   
-  console.log("DATA HERE", tweetData)
+  // console.log("DATA HERE", tweetData)
 
   // extract tweet info
   let tweetText = tweetData.text;
@@ -223,6 +223,9 @@ async function extractTweet(uid, tweet, template, imageLocation){
       }
       // get all of the images and place them inline 
       parsedTweet = parsedTweet.replaceAll('{IMAGES}',parsedImages);
+    } else if (imageLocation=='skip images') {
+      // mostly do nothing
+      parsedTweet = parsedTweet.replaceAll('{IMAGES}',"");
     } else {
       // if inserting images as children removed unneeded template item
       parsedTweet = parsedTweet.replaceAll('{IMAGES}',"");
@@ -243,7 +246,9 @@ async function extractTweet(uid, tweet, template, imageLocation){
         }
       }
     }
-    
+  } else {
+    // no images in the tweet so get rid of the variable
+    parsedTweet = parsedTweet.replaceAll('{IMAGES}',"");
   }
   window.roamAlphaAPI.updateBlock({"block": 
                   {"uid": uid,
