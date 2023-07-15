@@ -13,6 +13,10 @@ function getimageLocation(extensionAPI) {
   return extensionAPI.settings.get('image-location') || "child block"
 }
 
+function getAutoExtractTag(extensionAPI) {
+  return extensionAPI.settings.get('auto-extract-tag') || "tweet-extract"
+}
+
 const panelConfig = {
   tabTitle: "Tweet Extract",
   settings: [
@@ -27,7 +31,19 @@ const panelConfig = {
       description: "If there are images attached to a tweet where should they be added",
       action: {type:     "select",
                 items:    ["child block", "inline", "skip images"],
-                }}
+                }},
+      {id:          "auto-extract",
+      name:        "Auto Extract",
+      description: "When Roam loads if there are blocks tagged with the `Auto Tweet Extract Tag` or `Auto Thread Extract Tag` they will be automatically extracted. Useful with Quick Capture solutions.",
+      action:      {type:     "switch"}},
+      {id:     "auto-extract-tag",
+      name:   "Auto Tweet Extract Tag",
+      description: "",
+      action: {type:        "input",
+                placeholder: "tweet-extract",
+                onChange:    (evt) => { 
+                  template = evt.target.value;
+                }}}
   ]
 };
 
@@ -329,6 +345,19 @@ async function extractTweet(uid, tweet, template, imageLocation){
     removeSpinner(uid)
 }
 
+function getPageRefs(page){
+  let query = `[:find (pull ?refs [:block/string :node/title :block/uid])
+                :in $ ?namespace
+                :where
+                  [?e :node/title ?namespace]
+                  [?refs :block/refs ?e]
+                ]`;
+  
+    let result = window.roamAlphaAPI.q(query,page).flat();
+    
+    return result;
+}
+
 // move onload to async function
 async function onload({extensionAPI}) {
   console.log("load tweet extract plugin")
@@ -352,6 +381,25 @@ async function onload({extensionAPI}) {
     label: "Extract Tweet",
     callback: (e) => extractTweet(e['block-uid'], e['block-string'], getTweetTemplate(extensionAPI), getimageLocation(extensionAPI))
   })
+   // auto extract
+   if (extensionAPI.settings.get('auto-extract')) {
+    let tweets = await getPageRefs(getAutoExtractTag(extensionAPI));
+  
+    // single tweets
+    for (const tweet of tweets) {
+      try {
+        await extractTweet(
+          tweet.uid,
+          tweet.string,
+          getTweetTemplate(extensionAPI),
+          getimageLocation(extensionAPI)
+        )
+      } catch (error) {
+        console.error(error, tweet)
+      }
+        
+    }
+  }
 }
 
 function onunload() {
