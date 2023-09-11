@@ -137,6 +137,9 @@ function removeSpinner(blockUID) {
 }
 
 function getTweetEmbed(tweetURL){
+  //oembed doesn't work for x.com so swap to twitter.com
+  console.log("tweetURL", tweetURL)
+  tweetURL = tweetURL.replace(/x\.com\//g, 'twitter.com/');
   // fallback function to get limited tweet data, no media included
   return fetchJsonp("https://publish.twitter.com/oembed?omit_script=1&url=" + tweetURL)
     .then(function(response) {
