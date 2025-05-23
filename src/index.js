@@ -3,7 +3,7 @@
 import fetchJsonp from 'fetch-jsonp';
 
 var defaultTweetTemplate = '[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]'
-const CORS_PROXY_URL = "https://roam-tweet-extract.glitch.me/"
+const CORS_PROXY_URL = `${window.roamAlphaAPI.constants.corsAnywhereProxyUrl}/`
 
 function getTweetTemplate(extensionAPI) {
   return extensionAPI.settings.get('tweet-template') || defaultTweetTemplate
