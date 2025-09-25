@@ -1,8 +1,9 @@
 /* Original code by matt vogel */
-  /* v2.1  */
+/* v3.0 - Updated to use TweetHunter API */
 import fetchJsonp from 'fetch-jsonp';
 
 var defaultTweetTemplate = '[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]'
+
 const CORS_PROXY_URL = `${window.roamAlphaAPI.constants.corsAnywhereProxyUrl}/`
 
 function getTweetTemplate(extensionAPI) {
@@ -22,7 +23,7 @@ const panelConfig = {
   settings: [
       {id:     "tweet-template",
        name:   "Tweet Template",
-       description: "variables available are {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE}, {IMAGES} as well as all Roam syntax",
+       description: "variables available are {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE}, {IMAGES}, {LIKES}, {RETWEETS} as well as all Roam syntax",
        action: {type:        "input",
                 placeholder: defaultTweetTemplate,
                 }},
@@ -34,7 +35,7 @@ const panelConfig = {
                 }},
       {id:          "auto-extract",
       name:        "Auto Extract",
-      description: "When Roam loads if there are blocks tagged with the `Auto Tweet Extract Tag` or `Auto Thread Extract Tag` they will be automatically extracted. Useful with Quick Capture solutions.",
+      description: "When Roam loads if there are blocks tagged with the `Auto Tweet Extract Tag` they will be automatically extracted. Useful with Quick Capture solutions.",
       action:      {type:     "switch"}},
       {id:     "auto-extract-tag",
       name:   "Auto Tweet Extract Tag",
@@ -47,28 +48,7 @@ const panelConfig = {
   ]
 };
 
-// alt tempalte [🐦]({URL}) by [{AUTHOR_NAME}]({AUTHOR_URL}) on [[{DATE}]]: {NEWLINE} {TWEET}
-function getInfofromTweetJSON(tweetJSON){
-  // preserve newlines
-  let htmlString= tweetJSON.html
-  htmlString = htmlString.replaceAll("<br>", "{NEWLINE}");
-
-  let htmlObject = document.createElement('div');
-  htmlObject.innerHTML = htmlString;
-  
-  let paragraph = htmlObject.querySelector("p")
-
-  let text = paragraph.innerText || paragraph.textContent;
-  let links = htmlObject.querySelectorAll("a")
-  let lastLink = links[links.length - 1]
-
-  tweetJSON.text = text;
-  tweetJSON.created_at = lastLink.innerText;
-  tweetJSON.name = tweetJSON.author_name
-  tweetJSON.username = tweetJSON.author_url.split('/').pop()
-  return tweetJSON
-}
-
+// SpinnerUI functions remain unchanged
 function addSpinner(blockUID) {
   const MySpinner = React.createElement(
     window.Blueprint.Core.Spinner,
@@ -136,9 +116,8 @@ function removeSpinner(blockUID) {
   }
 }
 
-function getTweetEmbed(tweetURL){
+function getTweetEmbed(tweetURL) {
   //oembed doesn't work for x.com so swap to twitter.com
-
   tweetURL = tweetURL.replace(/x\.com\//g, 'twitter.com/');
   // fallback function to get limited tweet data, no media included
   return fetchJsonp("https://publish.twitter.com/oembed?omit_script=1&url=" + tweetURL)
@@ -147,221 +126,254 @@ function getTweetEmbed(tweetURL){
     }).then(function(json) {
       return getInfofromTweetJSON(json)
     })
-  }
-
-function extractCurrentBlock(uid, template, imageLocation){
-  let query = `[:find ?s .
-                  :in $ ?uid
-                  :where 
-                    [?e :block/uid ?uid]
-                    [?e :block/string ?s]
-                ]`;
-
-  let block_string = window.roamAlphaAPI.q(query,uid);
-
-  extractTweet(uid, block_string, template, imageLocation);
 }
 
-async function extractTweet(uid, tweet, template, imageLocation){
-  // add a spinner to show we're doing something
-  addSpinner(uid)
+function getInfofromTweetJSON(tweetJSON) {
+  // preserve newlines
+  let htmlString = tweetJSON.html
+  htmlString = htmlString.replaceAll("<br>", "{NEWLINE}");
 
-  const regex =/(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/;
-  var urlRegex = new RegExp(regex, 'ig');
+  let htmlObject = document.createElement('div');
+  htmlObject.innerHTML = htmlString;
   
-  function linkify(text) {
-    return text.match(urlRegex);
-  } 
+  let paragraph = htmlObject.querySelector("p")
 
-  function getTweetUrl(content) {
-    let urlsTab = linkify(content);
-    if (urlsTab != null) { 
-        return urlsTab[urlsTab.length - 1];
-    } else { return 0; }
+  let text = paragraph.innerText || paragraph.textContent;
+  let links = htmlObject.querySelectorAll("a")
+  let lastLink = links[links.length - 1]
+
+  tweetJSON.text = text;
+  tweetJSON.created_at = lastLink.innerText;
+  tweetJSON.name = tweetJSON.author_name
+  tweetJSON.username = tweetJSON.author_url.split('/').pop()
+  return tweetJSON
+}
+
+async function getTweetHunterData(tweetURL) {
+  // Extract tweet ID from URL
+  const TWEET_ID = tweetURL.split("/")[5];
+  const CORS_PROXY_URL = window.roamAlphaAPI.constants.corsAnywhereProxyUrl;
+  
+  try {
+    const response = await fetch(`${CORS_PROXY_URL}https://tweethunter.io/api/thread?tweetId=${TWEET_ID}`, {
+      headers: {
+        "accept": "application/json",
+        "accept-language": "en-US,en;q=0.5",
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+        "Referer": "https://tweethunter.io/tweetpik",
+        "Referrer-Policy": "strict-origin-when-cross-origin"
+      },
+      method: "GET"
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("Error fetching from TweetHunter:", error);
+    throw error;
   }
+}
 
-  async function uploadFile(originalUrl) {
-    // fetch the file object from the url
-    const { file, mimeType } = await fetch(originalUrl)
-        .then(async (r) => {
-        return {
-            file: await r.blob(),
-            mimeType: r.headers.get("Content-Type"),
-        };
-        })
-        .then((obj) => obj);
-    //create a new File type to prep for upload
+async function uploadFile(originalUrl) {
+  try {
+    const response = await fetch(originalUrl);
+    const blob = await response.blob();
+    const mimeType = response.headers.get("Content-Type");
+    
     const splits = originalUrl.split("/");
     const lastSplit = splits[splits.length - 1];
-    const newFile = new File([file], lastSplit, {
-        type: mimeType,
-    });
-    // upload the new File via roamAlphaAPI
-    const uploadTheFile = window.roamAlphaAPI.util.uploadFile;
-    const uploadedUrl =
-        (await uploadTheFile({
-        file: newFile,
-        }).then((x) => x)) ?? "file-upload-error";
+    const newFile = new File([blob], lastSplit, { type: mimeType });
     
-    // grab the markdown for the newly uploaded file
+    const uploadTheFile = window.roamAlphaAPI.util.uploadFile;
+    const uploadedUrl = await uploadTheFile({ file: newFile }) ?? "file-upload-error";
+    
     const MD_IMAGE_REGEX = /\!\[\]\((.*)\)/g;
     const strippedUrl = [...uploadedUrl.matchAll(MD_IMAGE_REGEX)];
     const cleanUrl = strippedUrl?.[0]?.[0] ?? uploadedUrl;
 
     return cleanUrl;
-
-
+  } catch (error) {
+    console.error("Error uploading file:", error);
+    return "file-upload-error";
   }
+}
 
-  async function getTweetData(tweetURL) {
-    const TWEET_ID = tweetURL.split("/")[5]
-    // If the twitter API is being nice (not crazy rate limiting) I use a CORS proxy to get embeded tweet images. 
-    // Because of this sometimes a tweet needs to be extracted multiple times
-    
-    const BASE_URL = `${CORS_PROXY_URL}https://tweetpik.com/api/v2/tweets?url=`
-    
-    async function getData(url) {
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`HTTP error! Twitter API returns status: ${response.status}`);
-        }
-        return response.json();
-      }
-    
-      
-    let url = `${BASE_URL}${tweetURL}`
-    const tweetData = await getData(url).then(async (data) => {
-      return data;
-    });
-    return tweetData;
-  }
-
-  let tweetURL = getTweetUrl(tweet);
-  // parsing via API is skipped if the API is  volatile 
-  // I always use the oembed because some info is easier to get there
-
-  let tweetData = await getTweetEmbed(tweetURL);
+async function extractTweet(uid, tweet, template, imageLocation) {
+  addSpinner(uid);
 
   try {
-    let apiTweetData = await getTweetData(tweetURL);
-    if (apiTweetData === null) {
-      apiTweetData = await getTweetEmbed(tweetURL);
-      console.log("tweetData was null",apiTweetData)
+    // Extract URL from tweet text
+    const regex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
+    const urls = tweet.match(regex);
+    const tweetURL = urls ? urls[urls.length - 1] : null;
+
+    if (!tweetURL) {
+      throw new Error("No valid tweet URL found in text");
     }
-    // choosing the first index for now
-    // TODO parse tweet threads 😁
-    apiTweetData = apiTweetData[0]
-    console.log(apiTweetData)
 
-    // check if media exists
-    if (apiTweetData.photos.length > 0) {
-      console.log("pictures exist");
-      // add to tweetData in correct format (for backwards compatibility)
-      let photos = apiTweetData.photos.map((url) => {
-        return {
-          url: url,
-          type: 'photo'
-        };
-      });
-      tweetData.media = photos;
+    // Try TweetHunter API first
+    let tweetData;
+    try {
+      const tweetThread = await getTweetHunterData(tweetURL);
+      // Process all tweets in the thread if they exist
+      if (tweetThread.length > 1) {
+        // First tweet goes in the current block
+        tweetData = tweetThread[0];
+        // Rest of the thread goes in child blocks
+        for (let i = 1; i < tweetThread.length; i++) {
+          const childTweet = tweetThread[i];
+          await window.roamAlphaAPI.createBlock({
+            location: {
+              'parent-uid': uid,
+              order: 'last'
+            },
+            block: {
+              string: template
+                .replaceAll('{TWEET}', childTweet.textHtml.replace(/<[^>]*>/g, ''))
+                .replaceAll('{URL}', childTweet.url)
+                .replaceAll('{AUTHOR_NAME}', childTweet.handler.replace('@', ''))
+                .replaceAll('{AUTHOR_HANDLE}', childTweet.handler)
+                .replaceAll('{AUTHOR_URL}', `https://twitter.com/${childTweet.handler.replace('@', '')}`)
+                .replaceAll('{DATE}', window.roamAlphaAPI.util.dateToPageTitle(new Date(childTweet.datetime)))
+                .replaceAll('{NEWLINE}', '\n')
+                .replaceAll('{LIKES}', childTweet.likes.toString())
+                .replaceAll('{RETWEETS}', childTweet.retweets.toString())
+                .replaceAll('{IMAGES}', '') // Images will be added as child blocks if needed
+            }
+          });
+          
+          // Add images for child tweets if they exist
+          if (childTweet.photos && childTweet.photos.length > 0 && imageLocation !== 'skip images') {
+            for (const photoUrl of childTweet.photos) {
+              const cleanedAttachment = await uploadFile(photoUrl);
+              await window.roamAlphaAPI.createBlock({
+                location: {
+                  'parent-uid': uid,
+                  order: 'last'
+                },
+                block: {
+                  string: cleanedAttachment
+                }
+              });
+            }
+          }
+        }
+      }
+      tweetData = tweetThread[0]; // Process first tweet
+      
+      // Convert TweetHunter format to match our expected format
+      tweetData = {
+        text: tweetData.textHtml.replace(/<[^>]*>/g, ''), // Strip HTML tags
+        url: tweetData.url,
+        name: tweetData.handler.replace('@', ''),
+        username: tweetData.handler.replace('@', ''),
+        created_at: tweetData.datetime,
+        media: tweetData.photos.map(url => ({ type: 'photo', url })),
+        likes: tweetData.likes,
+        retweets: tweetData.retweets
+      };
+    } catch (error) {
+      console.log("TweetHunter API failed, falling back to oembed", error);
+      tweetData = await getTweetEmbed(tweetURL);
+    }
 
-    } 
+    if (!tweetData) {
+      throw new Error("No tweet data received");
+    }
 
-  } catch (error) {
-    console.error("Tweet Extraction API failure. Falling back to simple extraction.");
-    console.error(error);
-    // handle the error by calling a different function
-    tweetData = await getTweetEmbed(tweetURL);
-  }
+    // Convert tweet date to Roam format
+    const roamDate = window.roamAlphaAPI.util.dateToPageTitle(new Date(tweetData.datetime));
 
-  
-  // console.log("DATA HERE", tweetData)
+    // Extract pure text from HTML (remove emoji img tags etc)
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = tweetData.textHtml;
+    const tweetText = tempDiv.textContent || tempDiv.innerText;
 
-  // extract tweet info
-  let tweetText = tweetData.text;
-  let tweetDate = tweetData.created_at;
-  
-  // convert tweet date to roam date format
-  let roamDate = new Date(Date.parse(tweetDate));
-  roamDate = window.roamAlphaAPI.util.dateToPageTitle(roamDate)
+    // Parse tweet with template
+    let parsedTweet = template
+      .replaceAll('{TWEET}', tweetText)
+      .replaceAll('{URL}', tweetData.url)
+      .replaceAll('{AUTHOR_NAME}', tweetData.handler.replace('@', ''))
+      .replaceAll('{AUTHOR_HANDLE}', tweetData.handler)
+      .replaceAll('{AUTHOR_URL}', `https://twitter.com/${tweetData.handler.replace('@', '')}`)
+      .replaceAll('{DATE}', roamDate)
+      .replaceAll('{NEWLINE}', '\n')
+      .replaceAll('{LIKES}', tweetData.likes.toString())
+      .replaceAll('{RETWEETS}', tweetData.retweets.toString());
 
-  // parse tweet with template
-  var parsedTweet = template.replaceAll('{TWEET}',tweetText);
-  
-  // {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE}, {IMAGES}
-  parsedTweet = parsedTweet.replaceAll('{URL}',tweetURL);
-  parsedTweet = parsedTweet.replaceAll('{AUTHOR_NAME}',tweetData.name);
-  parsedTweet = parsedTweet.replaceAll('{AUTHOR_HANDLE}',tweetData.username);
-  parsedTweet = parsedTweet.replaceAll('{AUTHOR_URL}',`https://twitter.com/${tweetData.username}`);
-  parsedTweet = parsedTweet.replaceAll('{DATE}',roamDate);
-  parsedTweet = parsedTweet.replaceAll('{NEWLINE}', "\n" );
-
-  // insert images
-  
-  if (tweetData.media) {
-    if (imageLocation=='inline') {
-      let parsedImages = "";
-      for (const key in tweetData.media) { 
-        let type = tweetData.media[key].type
-        let url = tweetData.media[key].url
-        // console.log(type,url);
-        if (type=='photo') {
-          const cleanedAttachment = await uploadFile(url);
+    // Handle images based on imageLocation setting
+    if (tweetData.photos && tweetData.photos.length > 0) {
+      if (imageLocation === 'inline') {
+        let parsedImages = "";
+        for (const photoUrl of tweetData.photos) {
+          const cleanedAttachment = await uploadFile(photoUrl);
           parsedImages = parsedImages.concat(" ", cleanedAttachment);
         }
-      }
-      // get all of the images and place them inline 
-      parsedTweet = parsedTweet.replaceAll('{IMAGES}',parsedImages);
-    } else if (imageLocation=='skip images') {
-      // mostly do nothing
-      parsedTweet = parsedTweet.replaceAll('{IMAGES}',"");
-    } else {
-      // if inserting images as children removed unneeded template item
-      parsedTweet = parsedTweet.replaceAll('{IMAGES}',"");
-      // insert as children blocks
-      for (const key in tweetData.media) { 
-        let type = tweetData.media[key].type
-        let url = tweetData.media[key].url
-        // console.log(type,url);
-        if (type=='photo') {
-          const cleanedAttachment = await uploadFile(url);
-    
-            window.roamAlphaAPI.createBlock(
-          {"location": 
-            {"parent-uid": uid, 
-            "order": 'last'}, 
-          "block": 
-            {"string": cleanedAttachment}})
+        parsedTweet = parsedTweet.replaceAll('{IMAGES}', parsedImages);
+      } else if (imageLocation === 'skip images') {
+        parsedTweet = parsedTweet.replaceAll('{IMAGES}', "");
+      } else {
+        // Default: child blocks
+        parsedTweet = parsedTweet.replaceAll('{IMAGES}', "");
+        for (const photoUrl of tweetData.photos) {
+          const cleanedAttachment = await uploadFile(photoUrl);
+          await window.roamAlphaAPI.createBlock({
+            location: {
+              'parent-uid': uid,
+              order: 'last'
+            },
+            block: {
+              string: cleanedAttachment
+            }
+          });
         }
       }
+    } else {
+      parsedTweet = parsedTweet.replaceAll('{IMAGES}', "");
     }
-  } else {
-    // no images in the tweet so get rid of the variable
-    parsedTweet = parsedTweet.replaceAll('{IMAGES}',"");
+
+    // Update the block with parsed tweet
+    await window.roamAlphaAPI.updateBlock({
+      block: {
+        uid: uid,
+        string: parsedTweet
+      }
+    });
+
+  } catch (error) {
+    console.error("Error extracting tweet:", error);
+    // Update block to show error
+    await window.roamAlphaAPI.updateBlock({
+      block: {
+        uid: uid,
+        string: `Error extracting tweet: ${error.message}`
+      }
+    });
+  } finally {
+    removeSpinner(uid);
   }
-  window.roamAlphaAPI.updateBlock({"block": 
-                  {"uid": uid,
-                    "string": parsedTweet}})
-  // TODO catch errors
-
-    //remove the spinner
-    removeSpinner(uid)
 }
 
-function getPageRefs(page){
+// The rest of the code (getPageRefs, onload, onunload) remains unchanged
+function getPageRefs(page) {
   let query = `[:find (pull ?refs [:block/string :node/title :block/uid])
-                :in $ ?namespace
-                :where
-                  [?e :node/title ?namespace]
-                  [?refs :block/refs ?e]
-                ]`;
-  
-    let result = window.roamAlphaAPI.q(query,page).flat();
-    
-    return result;
+  :in $ ?namespace
+  :where
+    [?e :node/title ?namespace]
+    [?refs :block/refs ?e]
+  ]`;
+
+let result = window.roamAlphaAPI.q(query,page).flat();
+
+return result;
 }
 
-// move onload to async function
 async function onload({extensionAPI}) {
   console.log("load tweet extract plugin")
 
