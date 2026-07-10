@@ -40,10 +40,7 @@ const panelConfig = {
       name:   "Auto Tweet Extract Tag",
       description: "",
       action: {type:        "input",
-                placeholder: "tweet-extract",
-                onChange:    (evt) => { 
-                  template = evt.target.value;
-                }}}
+                placeholder: "tweet-extract"}}
   ]
 };
 
@@ -214,138 +211,132 @@ async function extractTweet(uid, tweet, template, imageLocation){
   }
 
   async function getTweetData(tweetURL) {
-    const TWEET_ID = tweetURL.split("/")[5]
-    // If the twitter API is being nice (not crazy rate limiting) I use a CORS proxy to get embeded tweet images. 
-    // Because of this sometimes a tweet needs to be extracted multiple times
-    
-    const BASE_URL = `${CORS_PROXY_URL}https://tweetpik.com/api/v2/tweets?url=`
-    
-    async function getData(url) {
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`HTTP error! Twitter API returns status: ${response.status}`);
-        }
-        return response.json();
-      }
-    
-      
-    let url = `${BASE_URL}${tweetURL}`
-    const tweetData = await getData(url).then(async (data) => {
-      return data;
-    });
-    return tweetData;
+    const match = tweetURL.match(/status(?:es)?\/(\d+)/);
+    if (!match) {
+      throw new Error(`Could not find a tweet ID in URL: ${tweetURL}`);
+    }
+
+    const response = await fetch(`${CORS_PROXY_URL}https://api.fxtwitter.com/status/${match[1]}`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! FxTwitter API returns status: ${response.status}`);
+    }
+    const json = await response.json();
+    if (json.code !== 200 || !json.tweet) {
+      throw new Error(`FxTwitter error: ${json.code}`);
+    }
+    return json.tweet;
   }
 
   let tweetURL = getTweetUrl(tweet);
-  // parsing via API is skipped if the API is  volatile 
-  // I always use the oembed because some info is easier to get there
-
-  let tweetData = await getTweetEmbed(tweetURL);
 
   try {
-    let apiTweetData = await getTweetData(tweetURL);
-    if (apiTweetData === null) {
-      apiTweetData = await getTweetEmbed(tweetURL);
-      console.log("tweetData was null",apiTweetData)
-    }
-    // choosing the first index for now
     // TODO parse tweet threads 😁
-    apiTweetData = apiTweetData[0]
-    console.log(apiTweetData)
-
-    // check if media exists
-    if (apiTweetData.photos.length > 0) {
-      console.log("pictures exist");
-      // add to tweetData in correct format (for backwards compatibility)
-      let photos = apiTweetData.photos.map((url) => {
-        return {
-          url: url,
-          type: 'photo'
-        };
-      });
-      tweetData.media = photos;
-
-    } 
-
-  } catch (error) {
-    console.error("Tweet Extraction API failure. Falling back to simple extraction.");
-    console.error(error);
-    // handle the error by calling a different function
-    tweetData = await getTweetEmbed(tweetURL);
-  }
-
-  
-  // console.log("DATA HERE", tweetData)
-
-  // extract tweet info
-  let tweetText = tweetData.text;
-  let tweetDate = tweetData.created_at;
-  
-  // convert tweet date to roam date format
-  let roamDate = new Date(Date.parse(tweetDate));
-  roamDate = window.roamAlphaAPI.util.dateToPageTitle(roamDate)
-
-  // parse tweet with template
-  var parsedTweet = template.replaceAll('{TWEET}',tweetText);
-  
-  // {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE}, {IMAGES}
-  parsedTweet = parsedTweet.replaceAll('{URL}',tweetURL);
-  parsedTweet = parsedTweet.replaceAll('{AUTHOR_NAME}',tweetData.name);
-  parsedTweet = parsedTweet.replaceAll('{AUTHOR_HANDLE}',tweetData.username);
-  parsedTweet = parsedTweet.replaceAll('{AUTHOR_URL}',`https://twitter.com/${tweetData.username}`);
-  parsedTweet = parsedTweet.replaceAll('{DATE}',roamDate);
-  parsedTweet = parsedTweet.replaceAll('{NEWLINE}', "\n" );
-
-  // insert images
-  
-  if (tweetData.media) {
-    if (imageLocation=='inline') {
-      let parsedImages = "";
-      for (const key in tweetData.media) { 
-        let type = tweetData.media[key].type
-        let url = tweetData.media[key].url
-        // console.log(type,url);
-        if (type=='photo') {
-          const cleanedAttachment = await uploadFile(url);
-          parsedImages = parsedImages.concat(" ", cleanedAttachment);
-        }
-      }
-      // get all of the images and place them inline 
-      parsedTweet = parsedTweet.replaceAll('{IMAGES}',parsedImages);
-    } else if (imageLocation=='skip images') {
-      // mostly do nothing
-      parsedTweet = parsedTweet.replaceAll('{IMAGES}',"");
-    } else {
-      // if inserting images as children removed unneeded template item
-      parsedTweet = parsedTweet.replaceAll('{IMAGES}',"");
-      // insert as children blocks
-      for (const key in tweetData.media) { 
-        let type = tweetData.media[key].type
-        let url = tweetData.media[key].url
-        // console.log(type,url);
-        if (type=='photo') {
-          const cleanedAttachment = await uploadFile(url);
-    
-            window.roamAlphaAPI.createBlock(
-          {"location": 
-            {"parent-uid": uid, 
-            "order": 'last'}, 
-          "block": 
-            {"string": cleanedAttachment}})
-        }
-      }
+    let apiTweet;
+    try {
+      apiTweet = await getTweetData(tweetURL);
+    } catch (error) {
+      console.error("FxTwitter API failure.", error);
+      apiTweet = null;
     }
-  } else {
-    // no images in the tweet so get rid of the variable
-    parsedTweet = parsedTweet.replaceAll('{IMAGES}',"");
-  }
-  window.roamAlphaAPI.updateBlock({"block": 
-                  {"uid": uid,
-                    "string": parsedTweet}})
-  // TODO catch errors
 
+    // oembed remains the primary source for text/author/date
+    let tweetData;
+    try {
+      tweetData = await getTweetEmbed(tweetURL);
+    } catch (error) {
+      console.error("oembed extraction failure.", error);
+      tweetData = null;
+    }
+
+    if (tweetData === null && apiTweet !== null) {
+      tweetData = {
+        text: apiTweet.text,
+        created_at: apiTweet.created_at,
+        name: apiTweet.author.name,
+        username: apiTweet.author.screen_name
+      };
+    }
+
+    if (tweetData === null) {
+      throw new Error("Both FxTwitter and oembed extraction failed.");
+    }
+
+    if (apiTweet?.media?.photos?.length) {
+      tweetData.media = apiTweet.media.photos.map((p) => ({ url: p.url, type: 'photo' }));
+    }
+
+    // extract tweet info
+    let tweetText = tweetData.text;
+    let tweetDate = tweetData.created_at;
+
+    // convert tweet date to roam date format
+    let roamDate = new Date(Date.parse(tweetDate));
+    roamDate = window.roamAlphaAPI.util.dateToPageTitle(roamDate)
+
+    // parse tweet with template
+    var parsedTweet = template.replaceAll('{TWEET}',tweetText);
+
+    // {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE}, {IMAGES}
+    parsedTweet = parsedTweet.replaceAll('{URL}',tweetURL);
+    parsedTweet = parsedTweet.replaceAll('{AUTHOR_NAME}',tweetData.name);
+    parsedTweet = parsedTweet.replaceAll('{AUTHOR_HANDLE}',tweetData.username);
+    parsedTweet = parsedTweet.replaceAll('{AUTHOR_URL}',`https://twitter.com/${tweetData.username}`);
+    parsedTweet = parsedTweet.replaceAll('{DATE}',roamDate);
+    parsedTweet = parsedTweet.replaceAll('{NEWLINE}', "\n" );
+
+    // insert images
+
+    if (tweetData.media) {
+      if (imageLocation=='inline') {
+        let parsedImages = "";
+        for (const key in tweetData.media) {
+          let type = tweetData.media[key].type
+          let url = tweetData.media[key].url
+          // console.log(type,url);
+          if (type=='photo') {
+            const cleanedAttachment = await uploadFile(url);
+            parsedImages = parsedImages.concat(" ", cleanedAttachment);
+          }
+        }
+        // get all of the images and place them inline
+        parsedTweet = parsedTweet.replaceAll('{IMAGES}',parsedImages);
+      } else if (imageLocation=='skip images') {
+        // mostly do nothing
+        parsedTweet = parsedTweet.replaceAll('{IMAGES}',"");
+      } else {
+        // if inserting images as children removed unneeded template item
+        parsedTweet = parsedTweet.replaceAll('{IMAGES}',"");
+        // insert as children blocks
+        for (const key in tweetData.media) {
+          let type = tweetData.media[key].type
+          let url = tweetData.media[key].url
+          // console.log(type,url);
+          if (type=='photo') {
+            const cleanedAttachment = await uploadFile(url);
+
+              window.roamAlphaAPI.createBlock(
+            {"location":
+              {"parent-uid": uid,
+              "order": 'last'},
+            "block":
+              {"string": cleanedAttachment}})
+          }
+        }
+      }
+    } else {
+      // no images in the tweet so get rid of the variable
+      parsedTweet = parsedTweet.replaceAll('{IMAGES}',"");
+    }
+    window.roamAlphaAPI.updateBlock({"block":
+                    {"uid": uid,
+                      "string": parsedTweet}})
+    // TODO catch errors
+  } catch (error) {
+    console.error("Tweet extraction failed.", error);
+  } finally {
     //remove the spinner
     removeSpinner(uid)
+  }
 }
 
 function getPageRefs(page){
