@@ -1,5 +1,5 @@
 /* Original code by matt vogel */
-  /* v2.1  */
+  /* v2.2  */
 import fetchJsonp from 'fetch-jsonp';
 
 var defaultTweetTemplate = '[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]'

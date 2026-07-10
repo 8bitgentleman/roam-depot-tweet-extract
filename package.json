@@ -1,6 +1,6 @@
 {
   "name": "roam-depot-tweet-extract",
-  "version": "1.0.0",
+  "version": "2.2.0",
   "description": "Roam Research Plugin to extract tweets to markdown",
   "main": "index.js",
   "scripts": {
