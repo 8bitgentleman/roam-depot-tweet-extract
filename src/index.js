@@ -1,7 +1,7 @@
 /* Original code by matt vogel */
   /* v2.2  */
 import fetchJsonp from 'fetch-jsonp';
-import { getTweetId, fetchThread, selectTweets, getTweetText, fillTemplate } from './thread.mjs';
+import { getTweetId, fetchThread, selectThread, getTweetText, fillTemplate } from './thread.mjs';
 
 var defaultTweetTemplate = '[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]'
 const CORS_PROXY_URL = `${window.roamAlphaAPI.constants.corsAnywhereProxyUrl}/`
@@ -18,16 +18,9 @@ function getAutoExtractTag(extensionAPI) {
   return extensionAPI.settings.get('auto-extract-tag') || "tweet-extract"
 }
 
-function getAutoThreadTag(extensionAPI) {
-  return extensionAPI.settings.get('auto-thread-tag') || "thread-extract"
-}
-
-// both are off unless the user turns them on in the settings panel
-function getThreadOptions(extensionAPI) {
-  return {
-    fullThread: !!extensionAPI.settings.get('extract-thread'),
-    repliedTo: !!extensionAPI.settings.get('extract-replied-to')
-  }
+// off unless the user turns it on in the settings panel
+function getExtractFullThread(extensionAPI) {
+  return !!extensionAPI.settings.get('extract-thread')
 }
 
 const panelConfig = {
@@ -49,10 +42,6 @@ const panelConfig = {
       name:        "Extract Full Thread",
       description: "When on, Extract Tweet extracts the whole thread the tweet belongs to instead of the single tweet. The first tweet replaces the block and the rest of the thread is added as child blocks.",
       action:      {type:     "switch"}},
-      {id:          "extract-replied-to",
-      name:        "Include Replied-to Tweets",
-      description: "When on, extracting a reply also extracts the tweets it is replying to. The oldest tweet replaces the block and the rest are added as child blocks.",
-      action:      {type:     "switch"}},
       {id:          "auto-extract",
       name:        "Auto Extract",
       description: "When Roam loads if there are blocks tagged with the `Auto Tweet Extract Tag` or `Auto Thread Extract Tag` they will be automatically extracted. Useful with Quick Capture solutions.",
@@ -61,12 +50,7 @@ const panelConfig = {
       name:   "Auto Tweet Extract Tag",
       description: "",
       action: {type:        "input",
-                placeholder: "tweet-extract"}},
-      {id:     "auto-thread-tag",
-      name:   "Auto Thread Extract Tag",
-      description: "",
-      action: {type:        "input",
-                placeholder: "thread-extract"}}
+                placeholder: "tweet-extract"}}
   ]
 };
 
@@ -172,7 +156,7 @@ function getTweetEmbed(tweetURL){
     })
   }
 
-function extractCurrentBlock(uid, template, imageLocation, threadOptions){
+function extractCurrentBlock(uid, template, imageLocation, fullThread){
   let query = `[:find ?s .
                   :in $ ?uid
                   :where 
@@ -182,13 +166,13 @@ function extractCurrentBlock(uid, template, imageLocation, threadOptions){
 
   let block_string = window.roamAlphaAPI.q(query,uid);
 
-  extractTweetOrThread(uid, block_string, template, imageLocation, threadOptions);
+  extractTweetOrThread(uid, block_string, template, imageLocation, fullThread);
 }
 
-// a single tweet by default, more of the conversation when the thread settings are on
-function extractTweetOrThread(uid, tweet, template, imageLocation, threadOptions){
-  if (threadOptions.fullThread || threadOptions.repliedTo) {
-    return extractThread(uid, tweet, template, imageLocation, threadOptions);
+// a single tweet by default, the complete thread when the Extract Full Thread setting is on
+function extractTweetOrThread(uid, tweet, template, imageLocation, fullThread){
+  if (fullThread) {
+    return extractThread(uid, tweet, template, imageLocation);
   }
   return extractTweet(uid, tweet, template, imageLocation);
 }
@@ -403,7 +387,7 @@ async function uploadPhotos(status) {
   return images;
 }
 
-async function extractThread(uid, tweet, template, imageLocation, threadOptions){
+async function extractThread(uid, tweet, template, imageLocation){
   // add a spinner to show we're doing something
   addSpinner(uid)
 
@@ -413,9 +397,9 @@ async function extractThread(uid, tweet, template, imageLocation, threadOptions)
       throw new Error(`Could not find a tweet URL in block: ${tweet}`);
     }
 
-    // the whole conversation, oldest first, then only the part the settings ask for
+    // every tweet of the thread, oldest first, no matter which one was linked
     const conversation = await fetchThread(tweetID, getThreadPage);
-    const thread = selectTweets(conversation, tweetID, threadOptions);
+    const thread = selectThread(conversation, tweetID);
 
     for (const [index, status] of thread.entries()) {
       let images = imageLocation == 'skip images' ? [] : await uploadPhotos(status);
@@ -435,7 +419,7 @@ async function extractThread(uid, tweet, template, imageLocation, threadOptions)
         IMAGES: imageLocation == 'inline' ? images.map((image) => " " + image).join("") : ""
       });
 
-      // the first tweet replaces the block, the rest goes in child blocks
+      // the first tweet replaces the block, the rest of the thread goes in child blocks
       let tweetUID = uid;
       if (index === 0) {
         await window.roamAlphaAPI.updateBlock({"block":
@@ -485,7 +469,7 @@ async function onload({extensionAPI}) {
                 let block = window.roamAlphaAPI.ui.getFocusedBlock()
     
                 if (block != null){
-                  extractCurrentBlock(block['block-uid'], getTweetTemplate(extensionAPI), getimageLocation(extensionAPI), getThreadOptions(extensionAPI))
+                  extractCurrentBlock(block['block-uid'], getTweetTemplate(extensionAPI), getimageLocation(extensionAPI), getExtractFullThread(extensionAPI))
                 }
                },
                "disable-hotkey": false,
@@ -494,7 +478,7 @@ async function onload({extensionAPI}) {
   
   roamAlphaAPI.ui.blockContextMenu.addCommand({
     label: "Extract Tweet",
-    callback: (e) => extractTweetOrThread(e['block-uid'], e['block-string'], getTweetTemplate(extensionAPI), getimageLocation(extensionAPI), getThreadOptions(extensionAPI))
+    callback: (e) => extractTweetOrThread(e['block-uid'], e['block-string'], getTweetTemplate(extensionAPI), getimageLocation(extensionAPI), getExtractFullThread(extensionAPI))
   })
    // auto extract
    if (extensionAPI.settings.get('auto-extract')) {
@@ -508,29 +492,12 @@ async function onload({extensionAPI}) {
           tweet.string,
           getTweetTemplate(extensionAPI),
           getimageLocation(extensionAPI),
-          getThreadOptions(extensionAPI)
+          getExtractFullThread(extensionAPI)
         )
       } catch (error) {
         console.error(error, tweet)
       }
         
-    }
-
-    // blocks with the thread tag are extracted as threads whatever the Extract Full Thread setting says
-    let threads = await getPageRefs(getAutoThreadTag(extensionAPI));
-
-    for (const thread of threads) {
-      try {
-        await extractThread(
-          thread.uid,
-          thread.string,
-          getTweetTemplate(extensionAPI),
-          getimageLocation(extensionAPI),
-          {...getThreadOptions(extensionAPI), fullThread: true}
-        )
-      } catch (error) {
-        console.error(error, thread)
-      }
     }
   }
 }

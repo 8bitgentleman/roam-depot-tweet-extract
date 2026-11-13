@@ -8,8 +8,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 - `Extract Full Thread` setting. When on, `Extract Tweet` extracts the complete thread a tweet belongs to: the first tweet replaces the block and the rest of the thread is added as child blocks. Off by default.
-- `Include Replied-to Tweets` setting. When on, extracting a reply also extracts the tweets it is replying to. Off by default.
-- `Auto Thread Extract Tag` setting, so blocks with that tag are extracted as complete threads by Auto Extract.
 
 ## [2.2.0] - 2026-07-10
 
