@@ -72,6 +72,25 @@ export async function fetchThread(tweetId, fetchThreadPage, maxRequests = MAX_TH
   return thread;
 }
 
+// Picks what to extract out of the conversation `thread` (oldest first) for the linked tweet:
+// just that tweet, the rest of its author's thread (`fullThread`), and/or everything it is
+// replying to (`repliedTo`). The result is always one unbroken run of tweets.
+export function selectTweets(thread, tweetId, { fullThread, repliedTo }) {
+  const linked = thread.findIndex((status) => status.id === tweetId);
+  if (linked === -1) return thread;
+
+  let first = linked;
+  let last = linked;
+  if (fullThread) {
+    // the author's own thread: their tweets directly before and after the linked one
+    const sameAuthor = (status) => status.author.id === thread[linked].author.id;
+    while (first > 0 && sameAuthor(thread[first - 1])) first--;
+    while (last < thread.length - 1 && sameAuthor(thread[last + 1])) last++;
+  }
+
+  return thread.slice(repliedTo ? 0 : first, last + 1);
+}
+
 // Replies in a thread start with the handles of everyone being replied to ("@a @b actual text").
 // Twitter hides those, so drop them too.
 export function getTweetText(status) {

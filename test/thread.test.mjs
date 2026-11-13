@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getTweetId, fetchThread, getTweetText, fillTemplate } from '../src/thread.mjs';
+import { getTweetId, fetchThread, selectTweets, getTweetText, fillTemplate } from '../src/thread.mjs';
 
 // A status shaped like the ones api.fxtwitter.com/2/thread/{id} returns.
 function makeStatus(id, overrides = {}) {
@@ -252,6 +252,57 @@ test('fetchThread stops after the request limit', async () => {
 
   assert.deepEqual(requested, ['1', '2', '3', '4']);
   assert.deepEqual(ids(thread), ['1', '2', '3', '4', '5']);
+});
+
+// A conversation: someone else's tweet, then naval replies to it with a thread of three tweets (11, 12, 13).
+function conversation() {
+  const other = { type: 'profile', id: '999', name: 'Nikita Bier', screen_name: 'nikitabier', url: 'https://x.com/nikitabier' };
+  const reply = (id, parent) => ({ replying_to: { screen_name: 'x', status: parent } });
+  return [
+    makeStatus('10', { author: other, url: 'https://x.com/nikitabier/status/10' }),
+    makeStatus('11', reply('11', '10')),
+    makeStatus('12', reply('12', '11')),
+    makeStatus('13', reply('13', '12')),
+  ];
+}
+
+test('selectTweets keeps only the linked tweet when no setting is on', () => {
+  const tweets = selectTweets(conversation(), '12', { fullThread: false, repliedTo: false });
+
+  assert.deepEqual(ids(tweets), ['12']);
+});
+
+test('selectTweets with the full thread setting returns the author\'s thread without the tweet it replies to', () => {
+  const tweets = selectTweets(conversation(), '12', { fullThread: true, repliedTo: false });
+
+  assert.deepEqual(ids(tweets), ['11', '12', '13']);
+});
+
+test('selectTweets with the replied-to setting returns everything above the linked tweet and nothing after it', () => {
+  const tweets = selectTweets(conversation(), '12', { fullThread: false, repliedTo: true });
+
+  assert.deepEqual(ids(tweets), ['10', '11', '12']);
+});
+
+test('selectTweets with both settings returns the whole conversation', () => {
+  const tweets = selectTweets(conversation(), '12', { fullThread: true, repliedTo: true });
+
+  assert.deepEqual(ids(tweets), ['10', '11', '12', '13']);
+});
+
+test('selectTweets does not count the author\'s earlier tweets as the same thread when someone else replied in between', () => {
+  // naval (9) <- nikitabier (10) <- naval (11, 12, 13): tweet 9 is a different thread
+  const chain = [makeStatus('9'), ...conversation()];
+
+  const tweets = selectTweets(chain, '13', { fullThread: true, repliedTo: false });
+
+  assert.deepEqual(ids(tweets), ['11', '12', '13']);
+});
+
+test('selectTweets returns everything when the linked tweet is not in the list', () => {
+  const tweets = selectTweets(conversation(), '404', { fullThread: true, repliedTo: false });
+
+  assert.deepEqual(ids(tweets), ['10', '11', '12', '13']);
 });
 
 test('getTweetText drops the reply mentions Twitter hides at the start of a thread reply', () => {
