@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [2.3.0] - 2026-11-13
 
 ### Added
 - `Extract Full Thread` setting. When on, `Extract Tweet` extracts the complete thread a tweet belongs to: the first tweet replaces the block and the rest of the thread is added as child blocks. Off by default.

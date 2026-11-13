@@ -1,5 +1,5 @@
 /* Original code by matt vogel */
-  /* v2.2  */
+  /* v2.3  */
 import fetchJsonp from 'fetch-jsonp';
 import { getTweetId, fetchThread, selectThread, getTweetText, fillTemplate } from './thread.mjs';
 
