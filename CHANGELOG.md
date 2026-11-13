@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Added
+- `Extract Tweet Thread` command (right click menu and command palette) to extract a complete thread from a link to any tweet in it. The first tweet replaces the block and the rest of the thread is added as child blocks.
+- `Auto Thread Extract Tag` setting, so tagged threads are picked up by Auto Extract.
+
 ## [2.2.0] - 2026-07-10
 
 ### Fixed
