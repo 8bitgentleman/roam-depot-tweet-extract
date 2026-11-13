@@ -1,6 +1,7 @@
 /* Original code by matt vogel */
   /* v2.2  */
 import fetchJsonp from 'fetch-jsonp';
+import { getTweetId, fetchThread, selectThread, getTweetText, fillTemplate } from './thread.mjs';
 
 var defaultTweetTemplate = '[[>]] {TWEET} {NEWLINE} [🐦]({URL}) by {AUTHOR_NAME} on [[{DATE}]]'
 const CORS_PROXY_URL = `${window.roamAlphaAPI.constants.corsAnywhereProxyUrl}/`
@@ -15,6 +16,11 @@ function getimageLocation(extensionAPI) {
 
 function getAutoExtractTag(extensionAPI) {
   return extensionAPI.settings.get('auto-extract-tag') || "tweet-extract"
+}
+
+// off unless the user turns it on in the settings panel
+function getExtractFullThread(extensionAPI) {
+  return !!extensionAPI.settings.get('extract-thread')
 }
 
 const panelConfig = {
@@ -32,6 +38,10 @@ const panelConfig = {
       action: {type:     "select",
                 items:    ["child block", "inline", "skip images"],
                 }},
+      {id:          "extract-thread",
+      name:        "Extract Full Thread",
+      description: "When on, Extract Tweet extracts the whole thread the tweet belongs to instead of the single tweet. The first tweet replaces the block and the rest of the thread is added as child blocks.",
+      action:      {type:     "switch"}},
       {id:          "auto-extract",
       name:        "Auto Extract",
       description: "When Roam loads if there are blocks tagged with the `Auto Tweet Extract Tag` or `Auto Thread Extract Tag` they will be automatically extracted. Useful with Quick Capture solutions.",
@@ -146,7 +156,7 @@ function getTweetEmbed(tweetURL){
     })
   }
 
-function extractCurrentBlock(uid, template, imageLocation){
+function extractCurrentBlock(uid, template, imageLocation, fullThread){
   let query = `[:find ?s .
                   :in $ ?uid
                   :where 
@@ -156,7 +166,46 @@ function extractCurrentBlock(uid, template, imageLocation){
 
   let block_string = window.roamAlphaAPI.q(query,uid);
 
-  extractTweet(uid, block_string, template, imageLocation);
+  extractTweetOrThread(uid, block_string, template, imageLocation, fullThread);
+}
+
+// a single tweet by default, the complete thread when the Extract Full Thread setting is on
+function extractTweetOrThread(uid, tweet, template, imageLocation, fullThread){
+  if (fullThread) {
+    return extractThread(uid, tweet, template, imageLocation);
+  }
+  return extractTweet(uid, tweet, template, imageLocation);
+}
+
+async function uploadFile(originalUrl) {
+  // fetch the file object from the url
+  const { file, mimeType } = await fetch(originalUrl)
+      .then(async (r) => {
+      return {
+          file: await r.blob(),
+          mimeType: r.headers.get("Content-Type"),
+      };
+      })
+      .then((obj) => obj);
+  //create a new File type to prep for upload
+  const splits = originalUrl.split("/");
+  const lastSplit = splits[splits.length - 1];
+  const newFile = new File([file], lastSplit, {
+      type: mimeType,
+  });
+  // upload the new File via roamAlphaAPI
+  const uploadTheFile = window.roamAlphaAPI.util.uploadFile;
+  const uploadedUrl =
+      (await uploadTheFile({
+      file: newFile,
+      }).then((x) => x)) ?? "file-upload-error";
+
+  // grab the markdown for the newly uploaded file
+  const MD_IMAGE_REGEX = /\!\[\]\((.*)\)/g;
+  const strippedUrl = [...uploadedUrl.matchAll(MD_IMAGE_REGEX)];
+  const cleanUrl = strippedUrl?.[0]?.[0] ?? uploadedUrl;
+
+  return cleanUrl;
 }
 
 async function extractTweet(uid, tweet, template, imageLocation){
@@ -175,39 +224,6 @@ async function extractTweet(uid, tweet, template, imageLocation){
     if (urlsTab != null) { 
         return urlsTab[urlsTab.length - 1];
     } else { return 0; }
-  }
-
-  async function uploadFile(originalUrl) {
-    // fetch the file object from the url
-    const { file, mimeType } = await fetch(originalUrl)
-        .then(async (r) => {
-        return {
-            file: await r.blob(),
-            mimeType: r.headers.get("Content-Type"),
-        };
-        })
-        .then((obj) => obj);
-    //create a new File type to prep for upload
-    const splits = originalUrl.split("/");
-    const lastSplit = splits[splits.length - 1];
-    const newFile = new File([file], lastSplit, {
-        type: mimeType,
-    });
-    // upload the new File via roamAlphaAPI
-    const uploadTheFile = window.roamAlphaAPI.util.uploadFile;
-    const uploadedUrl =
-        (await uploadTheFile({
-        file: newFile,
-        }).then((x) => x)) ?? "file-upload-error";
-    
-    // grab the markdown for the newly uploaded file
-    const MD_IMAGE_REGEX = /\!\[\]\((.*)\)/g;
-    const strippedUrl = [...uploadedUrl.matchAll(MD_IMAGE_REGEX)];
-    const cleanUrl = strippedUrl?.[0]?.[0] ?? uploadedUrl;
-
-    return cleanUrl;
-
-
   }
 
   async function getTweetData(tweetURL) {
@@ -230,7 +246,6 @@ async function extractTweet(uid, tweet, template, imageLocation){
   let tweetURL = getTweetUrl(tweet);
 
   try {
-    // TODO parse tweet threads 😁
     let apiTweet;
     try {
       apiTweet = await getTweetData(tweetURL);
@@ -339,6 +354,96 @@ async function extractTweet(uid, tweet, template, imageLocation){
   }
 }
 
+async function createTweetBlock(parentUID, text){
+  let uid = window.roamAlphaAPI.util.generateUID();
+  await window.roamAlphaAPI.createBlock(
+    {"location":
+      {"parent-uid": parentUID,
+      "order": 'last'},
+    "block":
+      {"string": text,
+      "uid": uid}})
+  return uid;
+}
+
+async function getThreadPage(tweetID) {
+  const response = await fetch(`${CORS_PROXY_URL}https://api.fxtwitter.com/2/thread/${tweetID}`);
+  if (!response.ok) {
+    throw new Error(`HTTP error! FxTwitter API returns status: ${response.status}`);
+  }
+  return response.json();
+}
+
+async function uploadPhotos(status) {
+  let images = [];
+  for (const photo of status.media?.photos ?? []) {
+    try {
+      images.push(await uploadFile(photo.url));
+    } catch (error) {
+      // one broken image shouldn't cost the rest of the thread
+      console.error("Image upload failed.", error);
+    }
+  }
+  return images;
+}
+
+async function extractThread(uid, tweet, template, imageLocation){
+  // add a spinner to show we're doing something
+  addSpinner(uid)
+
+  try {
+    const tweetID = getTweetId(tweet);
+    if (!tweetID) {
+      throw new Error(`Could not find a tweet URL in block: ${tweet}`);
+    }
+
+    // every tweet of the thread, oldest first, no matter which one was linked
+    const conversation = await fetchThread(tweetID, getThreadPage);
+    const thread = selectThread(conversation, tweetID);
+
+    for (const [index, status] of thread.entries()) {
+      let images = imageLocation == 'skip images' ? [] : await uploadPhotos(status);
+
+      // convert tweet date to roam date format
+      let roamDate = new Date(status.created_timestamp * 1000);
+      roamDate = window.roamAlphaAPI.util.dateToPageTitle(roamDate)
+
+      // {TWEET}, {URL}, {AUTHOR_NAME}, {AUTHOR_HANDLE}, {AUTHOR_URL}, {DATE}, {NEWLINE}, {IMAGES}
+      let parsedTweet = fillTemplate(template, {
+        TWEET: getTweetText(status),
+        URL: status.url,
+        AUTHOR_NAME: status.author.name,
+        AUTHOR_HANDLE: status.author.screen_name,
+        AUTHOR_URL: `https://twitter.com/${status.author.screen_name}`,
+        DATE: roamDate,
+        IMAGES: imageLocation == 'inline' ? images.map((image) => " " + image).join("") : ""
+      });
+
+      // the first tweet replaces the block, the rest of the thread goes in child blocks
+      let tweetUID = uid;
+      if (index === 0) {
+        await window.roamAlphaAPI.updateBlock({"block":
+                        {"uid": uid,
+                          "string": parsedTweet}})
+      } else {
+        tweetUID = await createTweetBlock(uid, parsedTweet);
+      }
+
+      // images go under the tweet they belong to
+      if (imageLocation != 'inline') {
+        for (const image of images) {
+          await createTweetBlock(tweetUID, image);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Thread extraction failed.", error);
+  } finally {
+    //remove the spinner
+    removeSpinner(uid)
+  }
+}
+
 function getPageRefs(page){
   let query = `[:find (pull ?refs [:block/string :node/title :block/uid])
                 :in $ ?namespace
@@ -364,7 +469,7 @@ async function onload({extensionAPI}) {
                 let block = window.roamAlphaAPI.ui.getFocusedBlock()
     
                 if (block != null){
-                  extractCurrentBlock(block['block-uid'], getTweetTemplate(extensionAPI), getimageLocation(extensionAPI))
+                  extractCurrentBlock(block['block-uid'], getTweetTemplate(extensionAPI), getimageLocation(extensionAPI), getExtractFullThread(extensionAPI))
                 }
                },
                "disable-hotkey": false,
@@ -373,7 +478,7 @@ async function onload({extensionAPI}) {
   
   roamAlphaAPI.ui.blockContextMenu.addCommand({
     label: "Extract Tweet",
-    callback: (e) => extractTweet(e['block-uid'], e['block-string'], getTweetTemplate(extensionAPI), getimageLocation(extensionAPI))
+    callback: (e) => extractTweetOrThread(e['block-uid'], e['block-string'], getTweetTemplate(extensionAPI), getimageLocation(extensionAPI), getExtractFullThread(extensionAPI))
   })
    // auto extract
    if (extensionAPI.settings.get('auto-extract')) {
@@ -382,11 +487,12 @@ async function onload({extensionAPI}) {
     // single tweets
     for (const tweet of tweets) {
       try {
-        await extractTweet(
+        await extractTweetOrThread(
           tweet.uid,
           tweet.string,
           getTweetTemplate(extensionAPI),
-          getimageLocation(extensionAPI)
+          getimageLocation(extensionAPI),
+          getExtractFullThread(extensionAPI)
         )
       } catch (error) {
         console.error(error, tweet)

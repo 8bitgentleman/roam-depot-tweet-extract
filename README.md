@@ -12,6 +12,9 @@
 
   To trigger via a keyboard shortcut click into the block and hit a `CTRL` + `SHIFT` + `E`.
   
+## Threads
+  To extract a complete thread instead of a single tweet, turn on `Extract Full Thread` in the settings panel. `Extract Tweet` then extracts the whole thread the tweet belongs to, whichever tweet of the thread you linked to: the first tweet replaces the block and the rest of the thread is added below it as child blocks, in order. It is off by default.
+
 ## Auto Extract
   If set, tagged tweets and threads will be automatically extracted when roam loads. This is particularly useful when using a Quick Caption solution on mobile. When browsing twitter share a tweet to roam and tag the block before sending it. Next time you load up your graph the tweet or thread will be automatically extracted.
 
