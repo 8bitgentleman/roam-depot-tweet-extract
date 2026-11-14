@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getTweetId, fetchThread, selectThread, getTweetText, fillTemplate } from '../src/thread.mjs';
+import { getTweetId, getTweetUrl, fetchThread, selectThread, getTweetText, fillTemplate } from '../src/thread.mjs';
 
 // A status shaped like the ones api.fxtwitter.com/2/thread/{id} returns.
 function makeStatus(id, overrides = {}) {
@@ -73,6 +73,22 @@ test('getTweetId uses the last tweet link in the block', () => {
 
 test('getTweetId returns null when the block has no tweet link', () => {
   assert.equal(getTweetId('just a note with https://example.com/status'), null);
+});
+
+test('getTweetUrl returns the tweet link as written in the block', () => {
+  assert.equal(getTweetUrl('https://x.com/naval/status/1002103360646823936?s=20'), 'https://x.com/naval/status/1002103360646823936?s=20');
+  assert.equal(getTweetUrl('[🐦](https://twitter.com/jack/status/20) #tweet-extract'), 'https://twitter.com/jack/status/20');
+  assert.equal(getTweetUrl('read this: https://x.com/jack/status/20.'), 'https://x.com/jack/status/20');
+});
+
+test('getTweetUrl uses the last tweet link and skips other links after it', () => {
+  const block = 'https://x.com/jack/status/20 https://x.com/naval/status/1002103360646823936 via https://example.com/page';
+  assert.equal(getTweetUrl(block), 'https://x.com/naval/status/1002103360646823936');
+});
+
+test('getTweetUrl returns null when the block has no tweet link', () => {
+  assert.equal(getTweetUrl('just a note with https://example.com/status'), null);
+  assert.equal(getTweetUrl(null), null);
 });
 
 test('fetchThread returns the whole thread in order', async () => {
