@@ -13,6 +13,12 @@ export function getTweetId(text) {
   return matches.length ? matches[matches.length - 1][1] : null;
 }
 
+// the last tweet link in a block, or null if there is none
+export function getTweetUrl(text) {
+  const matches = String(text).match(/https?:\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*?\/status(?:es)?\/\d+(?:[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])?/gi);
+  return matches ? matches[matches.length - 1] : null;
+}
+
 // Returns every tweet of the thread `tweetId` belongs to, oldest first.
 // `fetchThreadPage(id)` resolves to the JSON body of https://api.fxtwitter.com/2/thread/{id}
 export async function fetchThread(tweetId, fetchThreadPage, maxRequests = MAX_THREAD_REQUESTS) {
